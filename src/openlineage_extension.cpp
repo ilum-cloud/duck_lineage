@@ -92,9 +92,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	                          LogicalType::BIGINT, Value::BIGINT(3), SetOpenLineageMaxRetries);
 
 	// SET openlineage_max_queue_size = 10000
-	config.AddExtensionOption("openlineage_max_queue_size",
-	                          "Maximum number of events to queue before dropping", LogicalType::BIGINT,
-	                          Value::BIGINT(10000), SetOpenLineageMaxQueueSize);
+	config.AddExtensionOption("openlineage_max_queue_size", "Maximum number of events to queue before dropping",
+	                          LogicalType::BIGINT, Value::BIGINT(10000), SetOpenLineageMaxQueueSize);
 
 	// SET openlineage_timeout = 10
 	config.AddExtensionOption("openlineage_timeout", "HTTP request timeout in seconds", LogicalType::BIGINT,
