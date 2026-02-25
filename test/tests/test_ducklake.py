@@ -94,7 +94,9 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
 
     # Get the dataset from Marquez
     dataset_name = "ducklake_db.main.customers"
-    dataset = marquez_client.get_dataset(namespace, dataset_name)
+    dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, dataset_name, ["dataSource", "catalog"], timeout_seconds=30
+    )
 
     assert dataset is not None, f"Dataset {dataset_name} should exist in Marquez"
 
@@ -172,7 +174,9 @@ def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
     assert result[0] == 2
 
     # Verify the dataset exists in Marquez
-    dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.products")
+    dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.products", ["dataSource"], timeout_seconds=30
+    )
     assert dataset is not None, "Products dataset should exist in Marquez"
 
     # Verify it has the correct schema
@@ -223,7 +227,9 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
     )
 
     # Verify the source dataset exists and is tracked in Marquez
-    dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.orders")
+    dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.orders", ["catalog"], timeout_seconds=30
+    )
     assert dataset is not None, "Orders dataset should exist in Marquez"
 
     # Verify schema is correct
@@ -282,12 +288,16 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez
     result = conn.execute("SELECT COUNT(*) FROM ducklake_db.regional_sales").fetchone()
     assert result[0] == 2
 
-    # Verify both datasets exist in Marquez
-    input_dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.raw_sales")
+    # Verify both datasets exist in Marquez with catalog facets
+    input_dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.raw_sales", ["catalog"], timeout_seconds=30
+    )
     assert input_dataset is not None, "Input dataset (raw_sales) should exist in Marquez"
 
-    # Use wait_for_dataset for CTAS output which may take longer to register
-    output_dataset = marquez_client.wait_for_dataset(namespace, "ducklake_db.main.regional_sales", timeout_seconds=20)
+    # Use wait_for_dataset_with_facets for CTAS output which may take longer to register
+    output_dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.regional_sales", ["catalog"], timeout_seconds=30
+    )
     assert output_dataset is not None, "Output dataset (regional_sales) should exist in Marquez"
 
     # Check output schema has the correct fields
@@ -350,11 +360,15 @@ def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     """
     )
 
-    # Verify both datasets exist in Marquez
-    inventory_dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.inventory")
+    # Verify both datasets exist in Marquez with catalog facets
+    inventory_dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.inventory", ["catalog"], timeout_seconds=30
+    )
     assert inventory_dataset is not None, "Inventory dataset should exist in Marquez"
 
-    suppliers_dataset = marquez_client.get_dataset(namespace, "memory.main.local_suppliers")
+    suppliers_dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "memory.main.local_suppliers", ["catalog"], timeout_seconds=30
+    )
     assert suppliers_dataset is not None, "Suppliers dataset should exist in Marquez"
 
     # Verify DuckLake dataset has correct catalog type
@@ -462,8 +476,10 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client,
     """
     )
 
-    # Get the dataset
-    dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.test_table")
+    # Get the dataset with dataSource facet
+    dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.test_table", ["dataSource"], timeout_seconds=30
+    )
     assert dataset is not None, "Dataset should exist"
 
     # Check dataSource facet
@@ -496,8 +512,10 @@ def test_ducklake_catalog_facet_content(duckdb_with_ducklake, marquez_client):
     # Create a table
     conn.execute("CREATE TABLE ducklake_db.catalog_test (id INT, value VARCHAR)")
 
-    # Get the dataset
-    dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.catalog_test")
+    # Get the dataset with catalog facet
+    dataset = marquez_client.wait_for_dataset_with_facets(
+        namespace, "ducklake_db.main.catalog_test", ["catalog"], timeout_seconds=30
+    )
     assert dataset is not None, "Dataset should exist"
 
     # Check catalog facet
