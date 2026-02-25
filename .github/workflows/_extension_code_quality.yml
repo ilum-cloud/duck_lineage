@@ -36,11 +36,6 @@ on:
         required: false
   repository_dispatch:
   merge_group:
-  pull_request:
-    types: [opened, reopened]
-    paths-ignore:
-      - '**.md'
-      - '.github/workflows/**'
 
 env:
   GH_TOKEN: ${{ secrets.GH_TOKEN }}
