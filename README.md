@@ -4,7 +4,7 @@ This repository is based on https://github.com/duckdb/extension-template, check 
 
 ---
 
-A community extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
+This is an extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
 
 ## Supported Features
 
@@ -13,8 +13,10 @@ This extension currently implements the following OpenLineage capabilities:
 - **Automatic events:** Emits START, COMPLETE and FAIL events for each query execution.
 - **Dataset detection:** Extracts input and output datasets from query plans (tables, CREATE/INSERT/UPDATE/DELETE/COPY, basic file table functions).
 - **Schema capture:** Records dataset schema (column names and types) as a dataset facet.
-- **Facets:** Job `sql` facet, run `parent` facet (via OPENLINEAGE_PARENT_\* env vars), `processing_engine`, `dataSource` and `catalog` facets, lifecycle change facets (CREATE/DROP/ALTER/OVERWRITE/RENAME/TRUNCATE), and basic `outputStatistics` (row count).
+- **Facets:** Job `sql` facet, run `parent` facet (via OPENLINEAGE*PARENT*\* env vars), `processing_engine`, `dataSource` and `catalog` facets, lifecycle change facets (CREATE/DROP/ALTER/OVERWRITE/RENAME/TRUNCATE), and basic `outputStatistics` (row count).
 - **Asynchronous delivery:** Background HTTP client with configurable OpenLineage URL, API key, retries, queueing and debug logging.
+
+> Note: This extension relies on extracting a query from DuckDB's context. Because DuckDB does not always fill-in the query context (notably, when using prepared statements - also in embedded clients), the extension may not be able to capture lineage for all queries. This is a known current limitation of the extension.
 
 ## Quick Start
 
@@ -23,7 +25,7 @@ This extension currently implements the following OpenLineage capabilities:
 The first step is to load the extension in DuckDB:
 
 ```sql
-LOAD 'build/release/duckdb_openlineage.duckdb_extension';
+LOAD 'build/release/extension/openlineage/openlineage.duckdb_extension';
 ```
 
 Next, configure the OpenLineage backend URL (e.g., Marquez):
@@ -39,6 +41,11 @@ SET openlineage_url='http://localhost:5000/api/v1/lineage';
 
 -- Enable Debug Mode (Logs JSON events to console)
 -- SET openlineage_debug=true;
+
+-- Advanced Configuration (Optional)
+-- SET openlineage_max_retries=3;           -- HTTP retry attempts (default: 3)
+-- SET openlineage_max_queue_size=10000;    -- Max pending events before dropping (default: 10000)
+-- SET openlineage_timeout=10;              -- HTTP request timeout in seconds (default: 10)
 ```
 
 Execute your analytical queries. The extension will automatically trace them.

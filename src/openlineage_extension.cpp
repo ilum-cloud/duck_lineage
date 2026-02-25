@@ -45,6 +45,21 @@ static void SetOpenLineageDebug(ClientContext &context, SetScope scope, Value &p
 	LineageClient::Get().SetDebug(parameter.GetValue<bool>());
 }
 
+/// @brief Callback for setting max retries for HTTP requests.
+static void SetOpenLineageMaxRetries(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetMaxRetries(parameter.GetValue<int64_t>());
+}
+
+/// @brief Callback for setting max queue size for pending events.
+static void SetOpenLineageMaxQueueSize(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetMaxQueueSize(parameter.GetValue<int64_t>());
+}
+
+/// @brief Callback for setting HTTP request timeout in seconds.
+static void SetOpenLineageTimeout(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetTimeout(parameter.GetValue<int64_t>());
+}
+
 //===--------------------------------------------------------------------===//
 // Extension Loading
 //===--------------------------------------------------------------------===//
@@ -71,6 +86,19 @@ static void LoadInternal(ExtensionLoader &loader) {
 	// SET openlineage_debug = true
 	config.AddExtensionOption("openlineage_debug", "Enable debug logging for OpenLineage events", LogicalType::BOOLEAN,
 	                          Value(false), SetOpenLineageDebug);
+
+	// SET openlineage_max_retries = 3
+	config.AddExtensionOption("openlineage_max_retries", "Maximum retry attempts for failed HTTP requests",
+	                          LogicalType::BIGINT, Value::BIGINT(3), SetOpenLineageMaxRetries);
+
+	// SET openlineage_max_queue_size = 10000
+	config.AddExtensionOption("openlineage_max_queue_size",
+	                          "Maximum number of events to queue before dropping", LogicalType::BIGINT,
+	                          Value::BIGINT(10000), SetOpenLineageMaxQueueSize);
+
+	// SET openlineage_timeout = 10
+	config.AddExtensionOption("openlineage_timeout", "HTTP request timeout in seconds", LogicalType::BIGINT,
+	                          Value::BIGINT(10), SetOpenLineageTimeout);
 
 	// Register the optimizer extension that injects lineage tracking
 	OptimizerExtension extension;
