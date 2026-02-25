@@ -1,0 +1,40 @@
+[project]
+name = "duckdb-openlineage"
+version = "0.1.0"
+description = "DuckDB extension for OpenLineage integration"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "black==24.*",
+    "clang-format==11.0.1",
+    "cmake-format>=0.6.13",
+    "cxxheaderparser>=1.7.0",
+    "marquez-python>=0.50.0",
+    "pcpp>=1.30",
+    "pytz>=2025.2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-timeout>=2.2.0",
+    "pytest-asyncio>=0.23.0",
+    "duckdb>=1.4.4",
+    "requests>=2.31.0",
+    "pyyaml>=6.0",
+]
+tidy = ["pybind11[global]>=3.0.1"]
+
+[tool.pytest.ini_options]
+testpaths = ["test/tests"]
+python_files = "test_*.py"
+python_classes = "Test*"
+python_functions = "test_*"
+addopts = ["-v", "--tb=short", "--strict-markers"]
+markers = [
+    "integration: Integration tests requiring Marquez",
+    "slow: Slow running tests",
+    "smoke: Quick smoke tests",
+]
+truncation_limit_lines = 10000
+truncation_limit_chars = 90000
