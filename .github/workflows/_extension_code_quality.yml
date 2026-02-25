@@ -1,0 +1,171 @@
+name: CodeQuality
+on:
+  workflow_call:
+    inputs:
+      explicit_checks:
+        type: string
+        required: false
+      extension_name:
+        type: string
+        required: true
+      override_repository:
+        type: string
+        required: false
+      override_ref:
+        type: string
+        required: false
+      duckdb_version:
+        type: string
+        required: true
+      override_ci_tools_repository:
+        type: string
+        required: false
+        default: "duckdb/extension-ci-tools"
+      ci_tools_version:
+        type: string
+        required: true
+      extra_toolchains:
+        type: string
+        required: false
+      format_checks:
+        type: string
+        required: false
+        default: "format;tidy"
+    secrets:
+      GH_TOKEN:
+        required: false
+  repository_dispatch:
+  merge_group:
+  pull_request:
+    types: [opened, reopened]
+    paths-ignore:
+      - '**.md'
+      - '.github/workflows/**'
+
+env:
+  GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+jobs:
+  format-check:
+    name: Format Check
+    if: contains(inputs.format_checks, 'format')
+    runs-on: ubuntu-22.04
+
+    env:
+      CC: gcc-10
+      CXX: g++-10
+      GEN: ninja
+
+    steps:
+      - uses: actions/checkout@v6
+        name: Checkout override repository
+        if: ${{inputs.override_repository != ''}}
+        with:
+          repository: ${{ inputs.override_repository }}
+          ref: ${{ inputs.override_ref }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - uses: actions/checkout@v6
+        name: Checkout current repository
+        if: ${{inputs.override_repository == ''}}
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - uses: actions/checkout@v6
+        name: Checkout Extension CI tools
+        with:
+          path: 'extension-ci-tools'
+          ref: ${{ inputs.ci_tools_version }}
+          repository: ${{ inputs.override_ci_tools_repository }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Cache Python environment
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-format-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: venv-${{ runner.os }}-format-
+
+      - name: Install
+        shell: bash
+        run: |
+            sudo apt-get update -y -qq
+            sudo apt-get install -y -qq ninja-build clang-format-11
+            uv sync --extra test
+            source .venv/bin/activate
+
+      - name: Format Check
+        shell: bash
+        run: |
+          uv run clang-format --version
+          uv run clang-format --dump-config
+          uv run black --version
+          uv run make format-check
+
+  tidy-check:
+    name: Tidy Check
+    if: contains(inputs.format_checks, 'tidy')
+    runs-on: ubuntu-24.04
+
+    env:
+      CC: gcc
+      CXX: g++
+      GEN: ninja
+      TIDY_THREADS: 4
+      TIDY_CHECKS: ${{ inputs.explicit_checks && inputs.explicit_checks || '' }}
+
+    steps:
+      - uses: actions/checkout@v6
+        name: Checkout override repository
+        if: ${{inputs.override_repository != ''}}
+        with:
+          repository: ${{ inputs.override_repository }}
+          ref: ${{ inputs.override_ref }}
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - uses: actions/checkout@v6
+        name: Checkout current repository
+        if: ${{inputs.override_repository == ''}}
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      - uses: actions/checkout@v6
+        name: Checkout Extension CI tools
+        with:
+          path: 'extension-ci-tools'
+          ref: ${{ inputs.ci_tools_version }}
+          repository: ${{ inputs.override_ci_tools_repository }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Cache Python environment
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-tidy-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: venv-${{ runner.os }}-tidy-
+
+      - name: Install
+        shell: bash
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq ninja-build clang-tidy linux-libc-dev libssl-dev libcurl4-openssl-dev nlohmann-json3-dev
+          uv sync --extra test --extra tidy
+          source .venv/bin/activate
+
+      - name: Tidy Check Diff
+        shell: bash
+        run: uv run make -j16 tidy-check

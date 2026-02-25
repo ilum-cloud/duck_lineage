@@ -7,5 +7,6 @@ testext
 
 # dotfiles & dotdirs
 .*
+!.github
 !.gitignore
 !.gitmodules
