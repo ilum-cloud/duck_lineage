@@ -1671,8 +1671,8 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						auto column_info = view_entry.GetColumnInfo();
 						if (column_info) {
 							for (size_t i = 0; i < column_info->names.size(); i++) {
-								fields.push_back(LineageEventBuilder::CreateSchemaField(column_info->names[i],
-								                                                        column_info->types[i].ToString()));
+								fields.push_back(LineageEventBuilder::CreateSchemaField(
+								    column_info->names[i], column_info->types[i].ToString()));
 							}
 						}
 
@@ -1733,8 +1733,8 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						auto column_info = view_entry.GetColumnInfo();
 						if (column_info) {
 							for (size_t i = 0; i < column_info->names.size(); i++) {
-								fields.push_back(LineageEventBuilder::CreateSchemaField(column_info->names[i],
-								                                                        column_info->types[i].ToString()));
+								fields.push_back(LineageEventBuilder::CreateSchemaField(
+								    column_info->names[i], column_info->types[i].ToString()));
 							}
 						}
 
