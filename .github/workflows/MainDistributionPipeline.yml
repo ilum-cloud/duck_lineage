@@ -9,6 +9,8 @@ on:
       - '**.md'
       - 'LICENSE'
       - '.gitignore'
+    tags:
+      - 'v*'
   pull_request:
     paths-ignore:
       - '**.md'
@@ -25,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       reduced_ci_mode: ${{ steps.config.outputs.reduced_ci_mode }}
-      should_run_code: ${{ steps.filter.outputs.code }}
+      should_run_code: ${{ steps.config.outputs.should_run_code }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -33,6 +35,7 @@ jobs:
 
       - uses: dorny/paths-filter@v3
         id: filter
+        if: github.event_name != 'push' || !startsWith(github.ref, 'refs/tags/')
         with:
           filters: |
             code:
@@ -46,9 +49,15 @@ jobs:
 
       - id: config
         run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+          # Tags always run full CI
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
+            echo "should_run_code=true" >> $GITHUB_OUTPUT
+            echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=enabled" >> $GITHUB_OUTPUT
           else
+            echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT
           fi
 
