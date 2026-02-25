@@ -89,3 +89,28 @@ class TestMaruezClient:
             sleep(sleep_time)
 
         return None
+
+    def wait_for_dataset_with_fields(
+        self, namespace: str, name: str, timeout_seconds: int = 30
+    ) -> dict | None:
+        """Wait for a dataset to appear with fields populated."""
+        start_time = time()
+        attempt = 0
+
+        while time() - start_time < timeout_seconds:
+            attempt += 1
+            try:
+                dataset = self.client.get_dataset(namespace, name)  # type: ignore
+                if dataset is not None:
+                    fields = dataset.get("fields", [])
+                    if fields:  # Fields list is non-empty
+                        return dataset
+            except Exception:
+                # Dataset not ready yet
+                pass
+
+            # Exponential backoff with jitter
+            sleep_time = min(2 ** min(attempt, 6), 5) + (attempt % 10) * 0.1
+            sleep(sleep_time)
+
+        return None

@@ -431,8 +431,10 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
     """
     )
 
-    # Get the derived dataset
-    summary_dataset = marquez_client.get_dataset(namespace, "ducklake_db.main.user_summaries")
+    # Get the derived dataset with fields populated
+    summary_dataset = marquez_client.wait_for_dataset_with_fields(
+        namespace, "ducklake_db.main.user_summaries", timeout_seconds=30
+    )
     assert summary_dataset is not None, "Summary dataset should exist"
 
     # Check schema has transformed fields
