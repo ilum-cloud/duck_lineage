@@ -90,9 +90,7 @@ class TestMaruezClient:
 
         return None
 
-    def wait_for_dataset_with_fields(
-        self, namespace: str, name: str, timeout_seconds: int = 30
-    ) -> dict | None:
+    def wait_for_dataset_with_fields(self, namespace: str, name: str, timeout_seconds: int = 30) -> dict | None:
         """Wait for a dataset to appear with fields populated."""
         start_time = time()
         attempt = 0
