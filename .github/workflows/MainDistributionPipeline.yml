@@ -72,16 +72,10 @@ jobs:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
 
-      - name: Cache apt packages
-        uses: actions/cache@v4
+      - name: Cache APT Packages
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
         with:
-          path: /var/cache/apt/archives
-          key: apt-${{ runner.os }}-${{ hashFiles('.github/workflows/*.yml') }}
-
-      - name: Install dependencies
-        run: |
-          sudo apt-get update -y -qq
-          sudo apt-get install -y -qq build-essential cmake ninja-build ccache git linux-libc-dev libssl-dev libcurl4-openssl-dev nlohmann-json3-dev
+          packages: build-essential cmake ninja-build ccache git linux-libc-dev libssl-dev libcurl4-openssl-dev nlohmann-json3-dev
 
       - name: Cache ccache
         uses: hendrikmuhs/ccache-action@v1.2
