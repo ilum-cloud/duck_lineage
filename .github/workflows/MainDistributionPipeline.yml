@@ -100,8 +100,8 @@ jobs:
     needs: [ci-config, run-tests]
     if: needs.ci-config.outputs.should_run_code == 'true'
     with:
-      duckdb_version: v1.4.4
-      ci_tools_version: v1.4.4
+      duckdb_version: v1.4.4-6404-g4213f2bae3 # 1.5.0-dev313
+      ci_tools_version: main
       extension_name: openlineage
       exclude_archs: "wasm_mvp;wasm_eh;wasm_threads;windows_amd64_mingw;"
       vcpkg_commit: 84bab45d415d22042bd0b9081aea57f362da3f35
@@ -114,7 +114,7 @@ jobs:
     if: needs.ci-config.outputs.should_run_code == 'true' && github.event.pull_request.draft != true
     uses: ./.github/workflows/_extension_code_quality.yml
     with:
-      duckdb_version: v1.4.4
-      ci_tools_version: v1.4.4
+      duckdb_version: v1.4.4-6404-g4213f2bae3 # 1.5.0-dev313
+      ci_tools_version: main
       extension_name: openlineage
       format_checks: 'format;tidy'
