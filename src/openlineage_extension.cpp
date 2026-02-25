@@ -102,7 +102,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	// Register the optimizer extension that injects lineage tracking
 	OptimizerExtension extension;
 	extension.pre_optimize_function = OpenLineageOptimizer::PreOptimize;
-	config.optimizer_extensions.push_back(extension);
+	OptimizerExtension::Register(config, extension);
 }
 
 //===--------------------------------------------------------------------===//

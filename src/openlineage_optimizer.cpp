@@ -142,11 +142,10 @@ static void ExtractInputsFromQueryNode(ClientContext &context, QueryNode &node, 
 	}
 	case QueryNodeType::SET_OPERATION_NODE: {
 		auto &setop_node = node.Cast<SetOperationNode>();
-		if (setop_node.left) {
-			ExtractInputsFromQueryNode(context, *setop_node.left, builder);
-		}
-		if (setop_node.right) {
-			ExtractInputsFromQueryNode(context, *setop_node.right, builder);
+		for (auto &child : setop_node.children) {
+			if (child) {
+				ExtractInputsFromQueryNode(context, *child, builder);
+			}
 		}
 		break;
 	}
@@ -263,11 +262,10 @@ static void ExtractTableNamesFromQueryNode(ClientContext &context, QueryNode &no
 	}
 	case QueryNodeType::SET_OPERATION_NODE: {
 		auto &setop_node = node.Cast<SetOperationNode>();
-		if (setop_node.left) {
-			ExtractTableNamesFromQueryNode(context, *setop_node.left, table_names);
-		}
-		if (setop_node.right) {
-			ExtractTableNamesFromQueryNode(context, *setop_node.right, table_names);
+		for (auto &child : setop_node.children) {
+			if (child) {
+				ExtractTableNamesFromQueryNode(context, *child, table_names);
+			}
 		}
 		break;
 	}
@@ -850,7 +848,7 @@ public:
 						auto *multi_file_data = dynamic_cast<MultiFileBindData *>(get.bind_data.get());
 						if (multi_file_data && multi_file_data->file_list) {
 							// Get the file paths from the file list
-							auto file_paths = multi_file_data->file_list->GetPaths();
+							auto file_paths = multi_file_data->file_list->GetAllFiles();
 
 							// Extract schema information from the returned types
 							json fields = json::array();
@@ -1406,11 +1404,10 @@ static void FindViewReferences(ClientContext &context, QueryNode &node, unordere
 	}
 	case QueryNodeType::SET_OPERATION_NODE: {
 		auto &setop_node = node.Cast<SetOperationNode>();
-		if (setop_node.left) {
-			FindViewReferences(context, *setop_node.left, referenced_views);
-		}
-		if (setop_node.right) {
-			FindViewReferences(context, *setop_node.right, referenced_views);
+		for (auto &child : setop_node.children) {
+			if (child) {
+				FindViewReferences(context, *child, referenced_views);
+			}
 		}
 		break;
 	}
@@ -1671,9 +1668,12 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 						// Extract schema information from the view
 						json fields = json::array();
-						for (size_t i = 0; i < view_entry.names.size(); i++) {
-							fields.push_back(LineageEventBuilder::CreateSchemaField(view_entry.names[i],
-							                                                        view_entry.types[i].ToString()));
+						auto column_info = view_entry.GetColumnInfo();
+						if (column_info) {
+							for (size_t i = 0; i < column_info->names.size(); i++) {
+								fields.push_back(LineageEventBuilder::CreateSchemaField(column_info->names[i],
+								                                                        column_info->types[i].ToString()));
+							}
 						}
 
 						// Add the view as an input dataset
@@ -1730,9 +1730,12 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 						// Extract schema information from the view
 						json fields = json::array();
-						for (size_t i = 0; i < view_entry.names.size(); i++) {
-							fields.push_back(LineageEventBuilder::CreateSchemaField(view_entry.names[i],
-							                                                        view_entry.types[i].ToString()));
+						auto column_info = view_entry.GetColumnInfo();
+						if (column_info) {
+							for (size_t i = 0; i < column_info->names.size(); i++) {
+								fields.push_back(LineageEventBuilder::CreateSchemaField(column_info->names[i],
+								                                                        column_info->types[i].ToString()));
+							}
 						}
 
 						// Add the view as an input dataset
