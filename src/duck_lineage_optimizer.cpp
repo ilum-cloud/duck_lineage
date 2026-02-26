@@ -1,13 +1,13 @@
 //===----------------------------------------------------------------------===//
-// DuckDB OpenLineage Extension
+// DuckDB DuckLineage Extension
 //
-// File: openlineage_optimizer.cpp
+// File: duck_lineage_optimizer.cpp
 // Description: Optimizer extension that analyzes query plans to extract lineage.
 //              Traverses the logical plan to identify input/output datasets,
 //              extracts schema information, and injects lineage tracking.
 //===----------------------------------------------------------------------===//
 
-#include "openlineage_optimizer.hpp"
+#include "duck_lineage_optimizer.hpp"
 #include "logical_lineage_sentinel.hpp"
 #include "lineage_client.hpp"
 #include "lineage_utils.hpp"
@@ -1419,7 +1419,7 @@ static void FindViewReferences(ClientContext &context, QueryNode &node, unordere
 	}
 }
 
-void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
+void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
 	// Early exit if no plan to optimize
 	if (!plan) {
 		return;

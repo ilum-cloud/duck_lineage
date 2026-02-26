@@ -78,7 +78,7 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     conn = duckdb_with_ducklake
 
     # Get the namespace being used
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create a table in DuckLake
     conn.execute(
@@ -147,7 +147,7 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
 def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
     """Test that INSERT operations create datasets with correct lineage information."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create and populate a table
     conn.execute(
@@ -196,7 +196,7 @@ def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
 def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
     """Test that SELECT queries track source datasets correctly."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create source data
     conn.execute(
@@ -249,7 +249,7 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
 def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez_client):
     """Test CREATE TABLE AS SELECT correctly tracks both input and output datasets."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create source table
     conn.execute(
@@ -321,7 +321,7 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez
 def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     """Test that cross-database queries track datasets from both sources with different catalog types."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create table in DuckLake
     conn.execute(
@@ -394,7 +394,7 @@ def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
 def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
     """Test field-level lineage for transformations."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create source table
     conn.execute(
@@ -466,7 +466,7 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
 def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client, ducklake_data_path):
     """Test that dataSource facet contains correct URI information."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create a table
     conn.execute(
@@ -509,7 +509,7 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client,
 def test_ducklake_catalog_facet_content(duckdb_with_ducklake, marquez_client):
     """Test that catalog facet contains correct metadata for DuckLake."""
     conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create a table
     conn.execute("CREATE TABLE ducklake_db.catalog_test (id INT, value VARCHAR)")

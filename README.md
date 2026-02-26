@@ -25,27 +25,27 @@ This extension currently implements the following OpenLineage capabilities:
 The first step is to load the extension in DuckDB:
 
 ```sql
-LOAD 'build/release/extension/openlineage/openlineage.duckdb_extension';
+LOAD 'build/release/extension/duck_lineage/duck_lineage.duckdb_extension';
 ```
 
 Next, configure the OpenLineage backend URL (e.g., Marquez):
 
 ```sql
-SET openlineage_url='http://localhost:5000/api/v1/lineage';
+SET duck_lineage_url='http://localhost:5000/api/v1/lineage';
 
 -- Set API Key (Optional)
--- SET openlineage_api_key='your-api-key';
+-- SET duck_lineage_api_key='your-api-key';
 
 -- Set Namespace (Default: duckdb)
--- SET openlineage_namespace='my-data-warehouse';
+-- SET duck_lineage_namespace='my-data-warehouse';
 
 -- Enable Debug Mode (Logs JSON events to console)
--- SET openlineage_debug=true;
+-- SET duck_lineage_debug=true;
 
 -- Advanced Configuration (Optional)
--- SET openlineage_max_retries=3;           -- HTTP retry attempts (default: 3)
--- SET openlineage_max_queue_size=10000;    -- Max pending events before dropping (default: 10000)
--- SET openlineage_timeout=10;              -- HTTP request timeout in seconds (default: 10)
+-- SET duck_lineage_max_retries=3;           -- HTTP retry attempts (default: 3)
+-- SET duck_lineage_max_queue_size=10000;    -- Max pending events before dropping (default: 10000)
+-- SET duck_lineage_timeout=10;              -- HTTP request timeout in seconds (default: 10)
 ```
 
 Execute your analytical queries. The extension will automatically trace them.
@@ -93,11 +93,11 @@ The main binaries that will be built are:
 
 ```sh
 ./build/release/duckdb
-./build/release/extension/openlineage/openlineage.duckdb_extension
+./build/release/extension/duck_lineage/duck_lineage.duckdb_extension
 ```
 
 - `duckdb` is the binary for the duckdb shell with the extension code automatically loaded.
-- `openlineage.duckdb_extension` is the loadable binary as it would be distributed.
+- `duck_lineage.duckdb_extension` is the loadable binary as it would be distributed.
 
 ## Running the tests
 
@@ -151,8 +151,8 @@ DuckDB. To specify a specific version, you can pass the version instead.
 After running these steps, you can install and load your extension using the regular INSTALL/LOAD commands in DuckDB:
 
 ```sql
-INSTALL openlineage;
-LOAD openlineage;
+INSTALL duck_lineage;
+LOAD duck_lineage;
 ```
 
 # Extension updating

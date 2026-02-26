@@ -13,9 +13,9 @@ def test_invalid_url_configuration(extension_path):
     conn.execute(f"LOAD '{extension_path}'")
 
     # These should not crash, but may log warnings
-    conn.execute("SET openlineage_url = 'not-a-valid-url'")
-    conn.execute("SET openlineage_url = ''")
-    conn.execute("SET openlineage_url = 'http://'")
+    conn.execute("SET duck_lineage_url = 'not-a-valid-url'")
+    conn.execute("SET duck_lineage_url = ''")
+    conn.execute("SET duck_lineage_url = 'http://'")
 
     # Should still be able to execute queries
     result = conn.execute("SELECT 1").fetchone()
@@ -49,8 +49,8 @@ def test_empty_namespace(extension_path, marquez_api_url):
     """Test behavior with empty namespace."""
     conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
     conn.execute(f"LOAD '{extension_path}'")
-    conn.execute(f"SET openlineage_url = '{marquez_api_url}/lineage'")
-    conn.execute("SET openlineage_namespace = ''")
+    conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
+    conn.execute("SET duck_lineage_namespace = ''")
 
     # Should still execute queries without crashing
     conn.execute("CREATE TABLE test (id INT)")
@@ -67,7 +67,7 @@ def test_special_characters_in_names(lineage_connection, marquez_client):
     conn = lineage_connection
 
     # Get the namespace being used
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Table names with special characters (quoted identifiers)
     conn.execute(
@@ -95,7 +95,7 @@ def test_very_long_query(lineage_connection, marquez_client):
     conn = lineage_connection
 
     # Get the namespace being used
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create a table with many columns
     columns = ", ".join([f"col{i} INT" for i in range(20)])
@@ -158,14 +158,14 @@ def test_concurrent_connections(lineage_connection):
         / "build"
         / "release"
         / "extension"
-        / "openlineage"
-        / "openlineage.duckdb_extension",
+        / "duck_lineage"
+        / "duck_lineage.duckdb_extension",
         Path(__file__).parent.parent.parent
         / "build"
         / "debug"
         / "extension"
-        / "openlineage"
-        / "openlineage.duckdb_extension",
+        / "duck_lineage"
+        / "duck_lineage.duckdb_extension",
     ]
 
     extension_path = None
@@ -183,8 +183,8 @@ def test_concurrent_connections(lineage_connection):
     for _ in range(2):
         conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
         conn.execute(f"LOAD '{extension_path}'")
-        conn.execute(f"SET openlineage_url = '{marquez_api_url}/lineage'")
-        conn.execute(f"SET openlineage_namespace = '{namespace}'")
+        conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
+        conn.execute(f"SET duck_lineage_namespace = '{namespace}'")
         connections.append(conn)
 
     # Execute queries on each connection
@@ -205,7 +205,7 @@ def test_null_values_handling(lineage_connection, marquez_client):
     conn = lineage_connection
 
     # Get the namespace being used
-    namespace = conn.execute("SELECT current_setting('openlineage_namespace')").fetchone()[0]
+    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create table with nullable columns
     conn.execute(
@@ -258,9 +258,9 @@ def test_configuration_persistence(extension_path, marquez_api_url):
     test_url = f"{marquez_api_url}/lineage"
     test_namespace = "test_persistence"
 
-    conn.execute(f"SET openlineage_url = '{test_url}'")
-    conn.execute(f"SET openlineage_namespace = '{test_namespace}'")
-    conn.execute("SET openlineage_debug = true")
+    conn.execute(f"SET duck_lineage_url = '{test_url}'")
+    conn.execute(f"SET duck_lineage_namespace = '{test_namespace}'")
+    conn.execute("SET duck_lineage_debug = true")
 
     # Execute some queries
     conn.execute("CREATE TABLE test1 (id INT)")
