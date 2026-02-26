@@ -101,9 +101,6 @@ jobs:
             ccache-${{ github.job }}-${{ runner.os }}-${{ needs.ci-config.outputs.cache_base_branch }}
           max-size: "2G"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
       - name: Run tests
         run: |
           make -j16 test-all

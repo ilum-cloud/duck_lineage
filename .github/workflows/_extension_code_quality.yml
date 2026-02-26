@@ -88,11 +88,14 @@ jobs:
           key: venv-${{ runner.os }}-format-${{ hashFiles('uv.lock', 'pyproject.toml') }}
           restore-keys: venv-${{ runner.os }}-format-
 
+      - name: Cache APT Packages
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: ninja-build clang-format-11
+
       - name: Install
         shell: bash
         run: |
-            sudo apt-get update -y -qq
-            sudo apt-get install -y -qq ninja-build clang-format-11
             uv sync --extra test
             source .venv/bin/activate
 
@@ -153,11 +156,14 @@ jobs:
           key: venv-${{ runner.os }}-tidy-${{ hashFiles('uv.lock', 'pyproject.toml') }}
           restore-keys: venv-${{ runner.os }}-tidy-
 
+      - name: Cache APT Packages
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.0
+        with:
+          packages: ninja-build clang-tidy linux-libc-dev libssl-dev libcurl4-openssl-dev nlohmann-json3-dev
+
       - name: Install
         shell: bash
         run: |
-          sudo apt-get update -y -qq
-          sudo apt-get install -y -qq ninja-build clang-tidy linux-libc-dev libssl-dev libcurl4-openssl-dev nlohmann-json3-dev
           uv sync --extra test --extra tidy
           source .venv/bin/activate
 
