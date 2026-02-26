@@ -1426,18 +1426,25 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	}
 
 	// Try to get the query via input.context.GetCurrentQuery();
-	// Due to bugs in DuckDB (https://github.com/duckdb/duckdb-java/issues/549), this may try to dereference a null
-	// pointer internally So we wrap in try-catch to avoid crashing
+	// PreparedStatements don't set active_query, so this may throw or return empty.
+	// We proceed with lineage extraction regardless — view reference detection is
+	// the only feature that requires the original SQL.
 	string query;
 	try {
 		query = input.context.GetCurrentQuery();
 	} catch (...) {
-		Printer::Print("Warning: Failed to get current query from context.");
-		return;
+		// PreparedStatements don't set active_query — this is expected
 	}
 
-	if (query.empty()) {
-		return;
+	bool has_original_query = !query.empty();
+
+	if (LineageClient::Get().IsDebug()) {
+		if (has_original_query) {
+			Printer::Print("OpenLineage Debug: Got original query string");
+		} else {
+			Printer::Print("OpenLineage Debug: No query string available (PreparedStatement?), proceeding with "
+			               "plan-based lineage");
+		}
 	}
 
 	// ===== Parse the query to detect view references BEFORE view expansion =====
@@ -1445,22 +1452,25 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// DuckDB expands views during binding, which happens before PreOptimize,
 	// so by the time we see the plan, the view references are already gone.
 	// Solution: Parse the original SQL to find view references.
-	Parser parser;
-	try {
-		parser.ParseQuery(query);
-	} catch (...) {
-		// If parsing fails, continue normally
-	}
-
-	// Track views that were referenced in the original query
+	// NOTE: This only works when the original query string is available (not PreparedStatements).
 	unordered_set<string> referenced_views;
-	if (!parser.statements.empty()) {
-		auto &statement = parser.statements[0];
-		if (statement->type == StatementType::SELECT_STATEMENT) {
-			auto &select_stmt = statement->Cast<SelectStatement>();
-			if (select_stmt.node) {
-				// Traverse the query node tree to find view references
-				FindViewReferences(input.context, *select_stmt.node, referenced_views);
+	if (has_original_query) {
+		Parser parser;
+		try {
+			parser.ParseQuery(query);
+		} catch (...) {
+			// If parsing fails, continue normally
+		}
+
+		// Track views that were referenced in the original query
+		if (!parser.statements.empty()) {
+			auto &statement = parser.statements[0];
+			if (statement->type == StatementType::SELECT_STATEMENT) {
+				auto &select_stmt = statement->Cast<SelectStatement>();
+				if (select_stmt.node) {
+					// Traverse the query node tree to find view references
+					FindViewReferences(input.context, *select_stmt.node, referenced_views);
+				}
 			}
 		}
 	}
@@ -1571,17 +1581,26 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	}
 
 	// Generate unique identifiers for this query execution
-	string jobName = GenerateJobName(*plan, query); // Readable job name from plan analysis
-	string runId = GenerateUUID();                  // Unique run ID for this execution
-	string eventTime = GetCurrentISOTime();         // Current timestamp in ISO 8601 format
+	// When query string is unavailable, use the plan representation for hash uniqueness
+	string hash_input = has_original_query ? query : plan->ToString();
+	string jobName = GenerateJobName(*plan, hash_input);
+
+	if (LineageClient::Get().IsDebug() && !has_original_query) {
+		Printer::Print("OpenLineage Debug: Using plan representation for job name hash: " + hash_input);
+	}
+	string runId = GenerateUUID();          // Unique run ID for this execution
+	string eventTime = GetCurrentISOTime(); // Current timestamp in ISO 8601 format
 
 	// Build the START event using the factory builder
 	auto builder = LineageEventBuilder::CreateStart();
 	builder.WithRunId(runId)
 	    .WithEventTime(eventTime)
 	    .WithJob(LineageClient::Get().GetNamespace(), jobName)
-	    .AddJobFacet_Sql(query)
 	    .AddRunFacet_ProcessingEngine(DuckDB::LibraryVersion(), "DuckDB");
+
+	if (has_original_query) {
+		builder.AddJobFacet_Sql(query);
+	}
 
 	// ===== Add views that were referenced in the query =====
 	for (const auto &view_name : referenced_views) {

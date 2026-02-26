@@ -16,7 +16,7 @@ This extension currently implements the following OpenLineage capabilities:
 - **Facets:** Job `sql` facet, run `parent` facet (via OPENLINEAGE*PARENT*\* env vars), `processing_engine`, `dataSource` and `catalog` facets, lifecycle change facets (CREATE/DROP/ALTER/OVERWRITE/RENAME/TRUNCATE), and basic `outputStatistics` (row count).
 - **Asynchronous delivery:** Background HTTP client with configurable OpenLineage URL, API key, retries, queueing and debug logging.
 
-> Note: This extension relies on extracting a query from DuckDB's context. Because DuckDB does not always fill-in the query context (notably, when using prepared statements - also in embedded clients), the extension may not be able to capture lineage for all queries. This is a known current limitation of the extension.
+> Note: This extension works with both direct SQL execution and PreparedStatements (used by embedded drivers like Java JDBC and Python SQLAlchemy). When a query is executed via PreparedStatement, DuckDB does not expose the original SQL string to the optimizer. In this case, the extension still captures full lineage (inputs, outputs, schemas, facets), but view reference detection is unavailable — tables accessed through views will appear as direct inputs rather than being grouped under their view. The SQL job facet is also omitted when the original query string is not available.
 
 ## Quick Start
 
