@@ -28,6 +28,7 @@ jobs:
     outputs:
       reduced_ci_mode: ${{ steps.config.outputs.reduced_ci_mode }}
       should_run_code: ${{ steps.config.outputs.should_run_code }}
+      cache_base_branch: ${{ steps.config.outputs.cache_base_branch }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -53,12 +54,18 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
             echo "should_run_code=true" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT
+            # Tags come from main branch (stable releases)
+            echo "cache_base_branch=main" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=enabled" >> $GITHUB_OUTPUT
+            # For PRs, restore from the target branch (main or next)
+            echo "cache_base_branch=${{ github.base_ref }}" >> $GITHUB_OUTPUT
           else
             echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT
+            # For pushes to main/next, restore from itself
+            echo "cache_base_branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
   run-tests:
@@ -89,7 +96,9 @@ jobs:
       - name: Cache ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ccache-${{ github.job }}-${{ runner.os }}
+          key: ccache-${{ github.job }}-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: |
+            ccache-${{ github.job }}-${{ runner.os }}-${{ needs.ci-config.outputs.cache_base_branch }}
           max-size: "2G"
 
       - name: Set up Docker Buildx
