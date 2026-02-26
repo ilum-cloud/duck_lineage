@@ -294,9 +294,9 @@ LineageEventBuilder &LineageEventBuilder::AddRunFacet_ErrorMessage(const std::st
 	return *this;
 }
 
-LineageEventBuilder &LineageEventBuilder::AddRunFacet_ProcessingEngine(const std::string &version,
-                                                                       const std::string &name,
-                                                                       const std::string &duck_lineage_adapter_version) {
+LineageEventBuilder &
+LineageEventBuilder::AddRunFacet_ProcessingEngine(const std::string &version, const std::string &name,
+                                                  const std::string &duck_lineage_adapter_version) {
 	// Ensure run exists
 	if (!event_json.contains("run")) {
 		event_json["run"] = json::object();

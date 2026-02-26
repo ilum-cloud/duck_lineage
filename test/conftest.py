@@ -39,7 +39,12 @@ def extension_path():
         / "extension"
         / "duck_lineage"
         / "duck_lineage.duckdb_extension",
-        Path(__file__).parent.parent / "build" / "debug" / "extension" / "duck_lineage" / "duck_lineage.duckdb_extension",
+        Path(__file__).parent.parent
+        / "build"
+        / "debug"
+        / "extension"
+        / "duck_lineage"
+        / "duck_lineage.duckdb_extension",
     ]
 
     for path in possible_paths:

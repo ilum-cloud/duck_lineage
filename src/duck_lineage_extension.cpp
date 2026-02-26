@@ -76,8 +76,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	                          SetDuckLineageUrl);
 
 	// SET duck_lineage_api_key = 'your-key'
-	config.AddExtensionOption("duck_lineage_api_key", "API Key for OpenLineage backend", LogicalType::VARCHAR, Value(""),
-	                          SetDuckLineageApiKey);
+	config.AddExtensionOption("duck_lineage_api_key", "API Key for OpenLineage backend", LogicalType::VARCHAR,
+	                          Value(""), SetDuckLineageApiKey);
 
 	// SET duck_lineage_namespace = 'my-namespace'
 	config.AddExtensionOption("duck_lineage_namespace", "Namespace for OpenLineage events", LogicalType::VARCHAR,
