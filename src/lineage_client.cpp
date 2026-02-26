@@ -27,7 +27,7 @@ LineageClient &LineageClient::Get() {
 // Constructor / Destructor
 //===--------------------------------------------------------------------===//
 
-LineageClient::LineageClient() : shutdown_requested(false), openlineage_url(""), lineage_namespace("duckdb") {
+LineageClient::LineageClient() : shutdown_requested(false), duck_lineage_url(""), lineage_namespace("duckdb") {
 	// Start the background worker thread to process events asynchronously
 	worker_thread = std::thread(&LineageClient::BackgroundWorker, this);
 }
@@ -92,7 +92,7 @@ void LineageClient::SendEvent(std::string event_json) {
 
 void LineageClient::SetUrl(std::string url) {
 	std::lock_guard<std::mutex> lock(config_mutex);
-	openlineage_url = std::move(url);
+	duck_lineage_url = std::move(url);
 }
 
 void LineageClient::SetApiKey(std::string key) {
@@ -131,7 +131,7 @@ void LineageClient::SetTimeout(int64_t timeout) {
 
 std::string LineageClient::GetUrl() const {
 	std::lock_guard<std::mutex> lock(config_mutex);
-	return openlineage_url;
+	return duck_lineage_url;
 }
 
 std::string LineageClient::GetApiKey() const {
@@ -192,7 +192,7 @@ void LineageClient::PostToBackend(const std::string &payload) {
 	int64_t timeout;
 	{
 		std::lock_guard<std::mutex> lock(config_mutex);
-		url = openlineage_url;
+		url = duck_lineage_url;
 		key = api_key;
 		retries = max_retries;
 		timeout = timeout_seconds;

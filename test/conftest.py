@@ -1,5 +1,5 @@
 """
-Pytest configuration and fixtures for DuckDB OpenLineage extension tests.
+Pytest configuration and fixtures for DuckDB DuckLineage extension tests.
 
 Prerequisites:
     uv sync --extra test
@@ -30,16 +30,16 @@ def marquez_api_url(marquez_url):
 
 @pytest.fixture
 def extension_path():
-    """Path to the compiled DuckDB OpenLineage extension."""
+    """Path to the compiled DuckDB DuckLineage extension."""
     # Try multiple possible build locations
     possible_paths = [
         Path(__file__).parent.parent
         / "build"
         / "release"
         / "extension"
-        / "openlineage"
-        / "openlineage.duckdb_extension",
-        Path(__file__).parent.parent / "build" / "debug" / "extension" / "openlineage" / "openlineage.duckdb_extension",
+        / "duck_lineage"
+        / "duck_lineage.duckdb_extension",
+        Path(__file__).parent.parent / "build" / "debug" / "extension" / "duck_lineage" / "duck_lineage.duckdb_extension",
     ]
 
     for path in possible_paths:
@@ -52,7 +52,7 @@ def extension_path():
 @pytest.fixture
 def duckdb_with_extension(extension_path, marquez_api_url):
     """
-    Create a DuckDB connection with the OpenLineage extension loaded and configured.
+    Create a DuckDB connection with the DuckLineage extension loaded and configured.
     """
     # Create a fresh in-memory database with allow_unsigned_extensions enabled
     conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
@@ -62,9 +62,9 @@ def duckdb_with_extension(extension_path, marquez_api_url):
         conn.execute(f"LOAD '{extension_path}'")
 
         # Configure the extension to point to Marquez
-        conn.execute(f"SET openlineage_url = '{marquez_api_url}/lineage'")
-        conn.execute("SET openlineage_namespace = 'duckdb_test'")
-        conn.execute("SET openlineage_debug = true")
+        conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
+        conn.execute("SET duck_lineage_namespace = 'duckdb_test'")
+        conn.execute("SET duck_lineage_debug = true")
 
         yield conn
 
@@ -123,13 +123,13 @@ def sample_table(duckdb_with_extension):
 @pytest.fixture
 def lineage_connection(extension_path, marquez_api_url, clean_marquez_namespace):
     """
-    Create a DuckDB connection with OpenLineage extension loaded and configured
+    Create a DuckDB connection with DuckLineage extension loaded and configured
     for a specific test namespace. Automatically handles cleanup.
     """
     conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
     conn.execute(f"LOAD '{extension_path}'")
-    conn.execute(f"SET openlineage_url = '{marquez_api_url}/lineage'")
-    conn.execute(f"SET openlineage_namespace = '{clean_marquez_namespace}'")
-    conn.execute("SET openlineage_debug = true")
+    conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
+    conn.execute(f"SET duck_lineage_namespace = '{clean_marquez_namespace}'")
+    conn.execute("SET duck_lineage_debug = true")
     yield conn
     conn.close()

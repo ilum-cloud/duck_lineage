@@ -1,5 +1,5 @@
 """
-Basic tests for DuckDB OpenLineage extension.
+Basic tests for DuckDB DuckLineage extension.
 """
 
 import pytest
@@ -18,14 +18,14 @@ def test_extension_loads(duckdb_with_extension):
 
 @pytest.mark.integration
 def test_configuration_set(duckdb_with_extension):
-    """Test that OpenLineage configuration can be set."""
+    """Test that DuckLineage configuration can be set."""
     conn = duckdb_with_extension
 
     # These should not raise errors
-    conn.execute("SET openlineage_url = 'http://test.example.com/api/v1/lineage'")
-    conn.execute("SET openlineage_namespace = 'test_namespace'")
-    conn.execute("SET openlineage_debug = true")
-    conn.execute("SET openlineage_api_key = 'test-key'")
+    conn.execute("SET duck_lineage_url = 'http://test.example.com/api/v1/lineage'")
+    conn.execute("SET duck_lineage_namespace = 'test_namespace'")
+    conn.execute("SET duck_lineage_debug = true")
+    conn.execute("SET duck_lineage_api_key = 'test-key'")
 
 
 @pytest.mark.integration
@@ -40,8 +40,8 @@ def test_simple_query(sample_table):
     # Query with filter
     result = conn.execute(
         """
-        SELECT name FROM test_employees 
-        WHERE department = 'Engineering' 
+        SELECT name FROM test_employees
+        WHERE department = 'Engineering'
         ORDER BY name
     """
     ).fetchall()
