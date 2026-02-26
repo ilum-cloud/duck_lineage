@@ -1442,7 +1442,8 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 		if (has_original_query) {
 			Printer::Print("OpenLineage Debug: Got original query string");
 		} else {
-			Printer::Print("OpenLineage Debug: No query string available (PreparedStatement?), proceeding with plan-based lineage");
+			Printer::Print("OpenLineage Debug: No query string available (PreparedStatement?), proceeding with "
+			               "plan-based lineage");
 		}
 	}
 
@@ -1587,8 +1588,8 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	if (LineageClient::Get().IsDebug() && !has_original_query) {
 		Printer::Print("OpenLineage Debug: Using plan representation for job name hash: " + hash_input);
 	}
-	string runId = GenerateUUID();                  // Unique run ID for this execution
-	string eventTime = GetCurrentISOTime();         // Current timestamp in ISO 8601 format
+	string runId = GenerateUUID();          // Unique run ID for this execution
+	string eventTime = GetCurrentISOTime(); // Current timestamp in ISO 8601 format
 
 	// Build the START event using the factory builder
 	auto builder = LineageEventBuilder::CreateStart();
