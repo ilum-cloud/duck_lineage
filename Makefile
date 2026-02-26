@@ -7,6 +7,19 @@ EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 
+# Override distribution workflow's test target to run our pytest suite
+test_release:
+	@if ! command -v docker >/dev/null 2>&1; then \
+		echo "Skipping tests: docker not available"; \
+		exit 0; \
+	fi
+	@if ! command -v uv >/dev/null 2>&1; then \
+		echo "Installing uv..." && curl -LsSf https://astral.sh/uv/install.sh | sh; \
+	fi
+	$(MAKE) test-deps marquez-up
+	cd test && uv run pytest -v -m smoke
+	$(MAKE) marquez-down
+
 #### Testing targets ####
 
 .PHONY: test-deps test-setup test-all test-integration test-smoke marquez-up marquez-down marquez-logs test-clean test-help

@@ -28,7 +28,7 @@ def test_csv_read_lineage(lineage_connection, marquez_client, tmp_path):
     assert result[0] == 2
 
     assert (
-        marquez_client.get_dataset(FILE_NAMESPACE, str(csv_file)) is not None
+        marquez_client.wait_for_dataset(FILE_NAMESPACE, str(csv_file)) is not None
     ), f"Should have created dataset for CSV file {csv_file} in 'file' namespace"
 
 
@@ -48,7 +48,7 @@ def test_csv_write_lineage(lineage_connection, marquez_client, tmp_path):
     # Verify file was created
     assert csv_file.exists()
     assert (
-        marquez_client.get_dataset(FILE_NAMESPACE, str(csv_file)) is not None
+        marquez_client.wait_for_dataset(FILE_NAMESPACE, str(csv_file)) is not None
     ), f"Should have created dataset for CSV file {csv_file} in 'file' namespace"
 
 
@@ -82,7 +82,7 @@ def test_parquet_read_lineage(lineage_connection, marquez_client, tmp_path):
     assert result[0] == 2
 
     assert (
-        marquez_client.get_dataset(FILE_NAMESPACE, str(parquet_file)) is not None
+        marquez_client.wait_for_dataset(FILE_NAMESPACE, str(parquet_file)) is not None
     ), f"Should have created dataset for Parquet file {parquet_file} in 'file' namespace"
 
 
@@ -110,7 +110,7 @@ def test_parquet_write_lineage(lineage_connection, marquez_client, tmp_path):
     # Verify file was created
     assert parquet_file.exists()
     assert (
-        marquez_client.get_dataset(FILE_NAMESPACE, str(parquet_file)) is not None
+        marquez_client.wait_for_dataset(FILE_NAMESPACE, str(parquet_file)) is not None
     ), f"Should have created dataset for Parquet file {parquet_file} in 'file' namespace"
 
 
@@ -147,9 +147,9 @@ def test_multiple_file_operations(lineage_connection, marquez_client, tmp_path):
     assert result[0] == 2  # Two categories: A, B
 
     assert (
-        marquez_client.get_dataset(FILE_NAMESPACE, str(input_csv)) is not None
+        marquez_client.wait_for_dataset(FILE_NAMESPACE, str(input_csv)) is not None
     ), f"Should have created dataset for input CSV file {input_csv} in 'file' namespace"
 
     assert (
-        marquez_client.get_dataset(FILE_NAMESPACE, str(output_parquet)) is not None
+        marquez_client.wait_for_dataset(FILE_NAMESPACE, str(output_parquet)) is not None
     ), f"Should have created dataset for output Parquet file {output_parquet} in 'file' namespace"

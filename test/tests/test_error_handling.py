@@ -85,7 +85,7 @@ def test_special_characters_in_names(lineage_connection, marquez_client):
     assert result[0] == 1
 
     # Verify dataset exists in Marquez
-    dataset = marquez_client.get_dataset(namespace, "memory.main.my-special-table")
+    dataset = marquez_client.wait_for_dataset(namespace, "memory.main.my-special-table")
     assert dataset is not None, "Dataset for 'my-special-table' should be registered in Marquez."
 
 
@@ -110,7 +110,7 @@ def test_very_long_query(lineage_connection, marquez_client):
     assert len(result) == 20
 
     # Verify dataset exists in Marquez
-    dataset = marquez_client.get_dataset(namespace, "memory.main.wide_table")
+    dataset = marquez_client.wait_for_dataset(namespace, "memory.main.wide_table")
     assert dataset is not None, "Dataset for 'wide_table' should be registered in Marquez."
 
 
@@ -146,36 +146,8 @@ def test_transaction_rollback(lineage_connection):
 
 
 @pytest.mark.integration
-def test_concurrent_connections(lineage_connection):
+def test_concurrent_connections(extension_path, marquez_api_url):
     """Test multiple concurrent connections with the extension."""
-    # Get config from the fixture connection
-    from pathlib import Path
-    import os
-
-    # Find extension path
-    possible_paths = [
-        Path(__file__).parent.parent.parent
-        / "build"
-        / "release"
-        / "extension"
-        / "duck_lineage"
-        / "duck_lineage.duckdb_extension",
-        Path(__file__).parent.parent.parent
-        / "build"
-        / "debug"
-        / "extension"
-        / "duck_lineage"
-        / "duck_lineage.duckdb_extension",
-    ]
-
-    extension_path = None
-    for path in possible_paths:
-        if path.exists():
-            extension_path = str(path)
-            break
-
-    marquez_api_url = os.getenv("MARQUEZ_URL", "http://localhost:5000")
-    marquez_api_url = f"{marquez_api_url}/api/v1"
     namespace = "test_concurrent"
 
     # Create multiple connections

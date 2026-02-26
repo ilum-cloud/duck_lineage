@@ -31,6 +31,7 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = ["-v", "--tb=short", "--strict-markers"]
+timeout = 120
 markers = [
     "integration: Integration tests requiring Marquez",
     "slow: Slow running tests",

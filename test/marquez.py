@@ -2,7 +2,7 @@ from marquez_client import MarquezClient
 from time import sleep, time
 
 
-class TestMaruezClient:
+class TestMarquezClient:
     def __init__(self, url: str, retries: int = 6) -> None:
         self.url = url
         self.retries = retries
@@ -14,7 +14,7 @@ class TestMaruezClient:
             try:
                 datasets = self.client.list_datasets(namespace)  # type: ignore
             except Exception:
-                sleep(2**i)
+                sleep(min(2**i, 5))
             else:
                 break
 
@@ -34,7 +34,7 @@ class TestMaruezClient:
             except Exception as e:
                 # Dataset might not exist yet, retry
                 last_error = e
-                sleep(2**i)
+                sleep(min(2**i, 5))
             else:
                 break
 

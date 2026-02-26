@@ -11,9 +11,10 @@ Run tests:
 import os
 import pytest
 import duckdb
+import requests
 from pathlib import Path
 
-from marquez import TestMaruezClient
+from marquez import TestMarquezClient
 
 
 @pytest.fixture(scope="session")
@@ -28,7 +29,17 @@ def marquez_api_url(marquez_url):
     return f"{marquez_url}/api/v1"
 
 
-@pytest.fixture
+@pytest.fixture(scope="session", autouse=True)
+def _check_marquez(marquez_url):
+    """Fail fast if Marquez is not reachable."""
+    try:
+        resp = requests.get(f"{marquez_url}/api/v1/namespaces", timeout=5)
+        resp.raise_for_status()
+    except Exception as e:
+        pytest.fail(f"Marquez is not reachable at {marquez_url}: {e}")
+
+
+@pytest.fixture(scope="session")
 def extension_path():
     """Path to the compiled DuckDB DuckLineage extension."""
     # Try multiple possible build locations
@@ -90,10 +101,10 @@ def clean_marquez_namespace():
     return namespace
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def marquez_client(marquez_url):
     """Marquez client for interacting with the Marquez API."""
-    return TestMaruezClient(marquez_url)
+    return TestMarquezClient(marquez_url)
 
 
 @pytest.fixture
