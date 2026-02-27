@@ -1,6 +1,8 @@
 from marquez_client import MarquezClient
 from time import sleep, time
 
+import requests
+
 
 class TestMarquezClient:
     def __init__(self, url: str, retries: int = 6) -> None:
@@ -112,3 +114,51 @@ class TestMarquezClient:
             sleep(sleep_time)
 
         return None
+
+    def list_jobs(self, namespace: str) -> list[dict]:
+        for i in range(self.retries):
+            try:
+                result = self.client.list_jobs(namespace)  # type: ignore
+                return result.get('jobs', [])
+            except Exception:
+                sleep(min(2**i, 5))
+        return []
+
+    def get_job(self, namespace: str, job_name: str) -> dict | None:
+        for i in range(self.retries):
+            try:
+                return self.client.get_job(namespace, job_name)  # type: ignore
+            except Exception:
+                sleep(min(2**i, 5))
+        return None
+
+    def _fetch_events(self, namespace: str, limit: int = 100) -> list[dict]:
+        """Fetch events directly from the Marquez lineage events endpoint, filtered by namespace."""
+        url = f"{self.url}/api/v1/events/lineage"
+        resp = requests.get(url, params={"limit": limit}, timeout=10)
+        resp.raise_for_status()
+        all_events = resp.json().get("events", [])
+        return [e for e in all_events if (e.get("job") or {}).get("namespace") == namespace]
+
+    def wait_for_events(self, namespace: str, min_events: int, timeout_seconds: int = 30) -> list[dict]:
+        """Poll events endpoint until at least min_events appear for the namespace."""
+        start_time = time()
+        attempt = 0
+
+        while time() - start_time < timeout_seconds:
+            attempt += 1
+            try:
+                events = self._fetch_events(namespace)
+                if len(events) >= min_events:
+                    return events
+            except Exception:
+                pass
+
+            sleep_time = min(2 ** min(attempt, 6), 5) + (attempt % 10) * 0.1
+            sleep(sleep_time)
+
+        # Return whatever we have, even if below min_events
+        try:
+            return self._fetch_events(namespace)
+        except Exception:
+            return []

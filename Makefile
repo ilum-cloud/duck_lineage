@@ -22,7 +22,7 @@ test_release:
 
 #### Testing targets ####
 
-.PHONY: test-deps test-setup test-all test-integration test-smoke marquez-up marquez-down marquez-logs test-clean test-help
+.PHONY: test-deps test-setup test-all test-integration test-smoke test-ducklake marquez-up marquez-down marquez-logs ducklake-up ducklake-down test-clean test-help
 
 test-help:
 	@echo "Testing Targets:"
@@ -31,8 +31,11 @@ test-help:
 	@echo "  test-all         - Run all tests (builds extension first)"
 	@echo "  test-integration - Run integration tests only"
 	@echo "  test-smoke       - Run quick smoke tests"
+	@echo "  test-ducklake    - Run DuckLake postgres+S3 tests"
 	@echo "  marquez-up       - Start Marquez services"
 	@echo "  marquez-down     - Stop Marquez services"
+	@echo "  ducklake-up      - Start Marquez + DuckLake infra (postgres, MinIO)"
+	@echo "  ducklake-down    - Stop DuckLake infra"
 	@echo "  marquez-logs     - View Marquez logs"
 	@echo "  test-clean       - Clean test artifacts"
 	@echo ""
@@ -48,7 +51,7 @@ test-setup: test-deps marquez-up
 	@echo "✓ Test environment ready!"
 	@echo "Run 'make test-all' to run tests"
 
-test-all: release test-deps marquez-up
+test-all: release test-deps ducklake-up
 	@echo "Running all tests..."
 	cd test && uv run pytest -v
 
@@ -59,6 +62,10 @@ test-integration: release test-deps marquez-up
 test-smoke: release test-deps marquez-up
 	@echo "Running smoke tests..."
 	cd test && uv run pytest -v -m smoke
+
+test-ducklake: release test-deps ducklake-up
+	@echo "Running DuckLake postgres+S3 tests..."
+	cd test && uv run pytest -v -m ducklake_postgres
 
 marquez-up:
 	@echo "Starting Marquez..."
@@ -78,6 +85,32 @@ marquez-up:
 marquez-down:
 	@echo "Stopping Marquez..."
 	cd test && docker compose down
+
+ducklake-up: marquez-up
+	@echo "Starting DuckLake infrastructure (postgres + MinIO)..."
+	cd test && docker compose --profile ducklake up -d
+	@echo "Waiting for DuckLake postgres to be ready..."
+	@for i in $$(seq 1 30); do \
+		if docker exec ducklake-postgres pg_isready -U ducklake >/dev/null 2>&1; then \
+			echo "✓ DuckLake postgres is ready!"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then echo "✗ DuckLake postgres failed to start"; exit 1; fi; \
+		sleep 2; \
+	done
+	@echo "Waiting for MinIO to be ready..."
+	@for i in $$(seq 1 30); do \
+		if curl -f -s http://localhost:9000/minio/health/live >/dev/null 2>&1; then \
+			echo "✓ MinIO is ready!"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then echo "✗ MinIO failed to start"; exit 1; fi; \
+		sleep 2; \
+	done
+
+ducklake-down:
+	@echo "Stopping DuckLake infrastructure..."
+	cd test && docker compose --profile ducklake down
 
 marquez-logs:
 	cd test && docker compose logs -f marquez
