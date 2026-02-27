@@ -17,10 +17,21 @@ test_release:
 	if ! command -v uv >/dev/null 2>&1; then \
 		echo "Installing uv..." && curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi; \
-	$(MAKE) test-deps marquez-up && \
-	(cd test && uv run pytest -v -m "integration and not ducklake_postgres"); \
+	export PATH="$$HOME/.local/bin:$$PATH"; \
+	uv sync --extra test && \
+	cd test && docker compose down -v && docker compose up -d && \
+	echo "Waiting for Marquez to be ready..." && \
+	for i in $$(seq 1 60); do \
+		if curl -f -s http://localhost:5001/ping >/dev/null 2>&1; then \
+			echo "Marquez is ready!"; \
+			break; \
+		fi; \
+		if [ $$i -eq 60 ]; then echo "Marquez failed to start"; exit 1; fi; \
+		sleep 2; \
+	done && \
+	uv run pytest -v -m "integration and not ducklake_postgres"; \
 	ret=$$?; \
-	$(MAKE) marquez-down; \
+	docker compose down; \
 	exit $$ret
 
 #### Testing targets ####
