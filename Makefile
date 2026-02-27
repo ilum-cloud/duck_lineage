@@ -8,6 +8,7 @@ EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 
 # Override distribution workflow's test target to run our pytest suite
+# Runs integration tests (excludes ducklake_postgres which needs extra infra)
 test_release:
 	@if ! command -v docker >/dev/null 2>&1; then \
 		echo "Skipping tests: docker not available"; \
@@ -17,7 +18,7 @@ test_release:
 		echo "Installing uv..." && curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi; \
 	$(MAKE) test-deps marquez-up && \
-	cd test && uv run pytest -v -m smoke; \
+	(cd test && uv run pytest -v -m "integration and not ducklake_postgres"); \
 	ret=$$?; \
 	$(MAKE) marquez-down; \
 	exit $$ret
