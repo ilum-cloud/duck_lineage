@@ -46,6 +46,8 @@ def duckdb_with_ducklake(lineage_connection, ducklake_db_file, ducklake_data_pat
     Create a DuckDB connection with DuckLake attached.
 
     Skips the test if DuckLake extension is not available.
+    Yields (conn, ducklake_namespace) where ducklake_namespace is the DATA_PATH
+    used as the dataset namespace for DuckLake tables.
     """
     conn = lineage_connection
 
@@ -62,7 +64,7 @@ def duckdb_with_ducklake(lineage_connection, ducklake_db_file, ducklake_data_pat
     except Exception as e:
         pytest.skip(f"Could not attach DuckLake: {e}")
 
-    yield conn
+    yield conn, ducklake_data_path
 
     # Detach and cleanup
     try:
@@ -75,10 +77,8 @@ def duckdb_with_ducklake(lineage_connection, ducklake_db_file, ducklake_data_pat
 @pytest.mark.smoke
 def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     """Test that DuckLake datasets have correct facets (schema, dataSource, catalog)."""
-    conn = duckdb_with_ducklake
-
-    # Get the namespace being used
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create a table in DuckLake
     conn.execute(
@@ -146,8 +146,8 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
 @pytest.mark.integration
 def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
     """Test that INSERT operations create datasets with correct lineage information."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create and populate a table
     conn.execute(
@@ -195,8 +195,8 @@ def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
 @pytest.mark.integration
 def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
     """Test that SELECT queries track source datasets correctly."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create source data
     conn.execute(
@@ -248,8 +248,8 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
 @pytest.mark.integration
 def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez_client):
     """Test CREATE TABLE AS SELECT correctly tracks both input and output datasets."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create source table
     conn.execute(
@@ -320,8 +320,8 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez
 @pytest.mark.integration
 def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     """Test that cross-database queries track datasets from both sources with different catalog types."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    user_namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create table in DuckLake
     conn.execute(
@@ -361,13 +361,15 @@ def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     )
 
     # Verify both datasets exist in Marquez with catalog facets
+    # DuckLake datasets use the data path as namespace
     inventory_dataset = marquez_client.wait_for_dataset_with_facets(
-        namespace, "ducklake_db.main.inventory", ["catalog"], timeout_seconds=30
+        ducklake_ns, "ducklake_db.main.inventory", ["catalog"], timeout_seconds=30
     )
     assert inventory_dataset is not None, "Inventory dataset should exist in Marquez"
 
+    # Memory datasets use the user-configured namespace
     suppliers_dataset = marquez_client.wait_for_dataset_with_facets(
-        namespace, "memory.main.local_suppliers", ["catalog"], timeout_seconds=30
+        user_namespace, "memory.main.local_suppliers", ["catalog"], timeout_seconds=30
     )
     assert suppliers_dataset is not None, "Suppliers dataset should exist in Marquez"
 
@@ -393,8 +395,8 @@ def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
 @pytest.mark.integration
 def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
     """Test field-level lineage for transformations."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create source table
     conn.execute(
@@ -463,10 +465,10 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
 
 
 @pytest.mark.integration
-def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client, ducklake_data_path):
+def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client):
     """Test that dataSource facet contains correct URI information."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create a table
     conn.execute(
@@ -499,7 +501,7 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client,
     # Should contain file:// reference to the ducklake data directory
     assert "file://" in uri, f"URI should have file:// scheme, got {uri}"
     # The path should reference the data path directory
-    assert "ducklake_data" in uri or ducklake_data_path in uri, f"URI should reference the data path, got {uri}"
+    assert "ducklake_data" in uri or ducklake_ns in uri, f"URI should reference the data path, got {uri}"
 
     # Name should match URI (both are the formatted path)
     assert name == uri, f"Name should match URI, got name={name}, uri={uri}"
@@ -508,8 +510,8 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client,
 @pytest.mark.integration
 def test_ducklake_catalog_facet_content(duckdb_with_ducklake, marquez_client):
     """Test that catalog facet contains correct metadata for DuckLake."""
-    conn = duckdb_with_ducklake
-    namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
+    conn, ducklake_ns = duckdb_with_ducklake
+    namespace = ducklake_ns
 
     # Create a table
     conn.execute("CREATE TABLE ducklake_db.catalog_test (id INT, value VARCHAR)")

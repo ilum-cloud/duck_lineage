@@ -31,10 +31,12 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 addopts = ["-v", "--tb=short", "--strict-markers"]
+timeout = 120
 markers = [
     "integration: Integration tests requiring Marquez",
     "slow: Slow running tests",
     "smoke: Quick smoke tests",
+    "ducklake_postgres: DuckLake tests with PostgreSQL metadata + S3 storage",
 ]
 truncation_limit_lines = 10000
 truncation_limit_chars = 90000
