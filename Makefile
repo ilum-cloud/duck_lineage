@@ -14,6 +14,9 @@ test_release:
 		echo "Skipping tests: docker not available"; \
 		exit 0; \
 	fi; \
+	case "$$(uname -s 2>/dev/null)" in \
+		MINGW*|MSYS*|CYGWIN*) echo "Skipping tests: Marquez requires Linux containers"; exit 0 ;; \
+	esac; \
 	if ! command -v uv >/dev/null 2>&1; then \
 		echo "Installing uv..." && curl -LsSf https://astral.sh/uv/install.sh | sh; \
 	fi; \
