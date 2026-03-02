@@ -58,7 +58,7 @@ jobs:
             echo "cache_base_branch=main" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
-            echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT  # TODO: revert to 'enabled' after validating all archs
+            echo "reduced_ci_mode=enabled" >> $GITHUB_OUTPUT
             # For PRs, restore from the target branch (main or next)
             echo "cache_base_branch=${{ github.base_ref }}" >> $GITHUB_OUTPUT
           else
