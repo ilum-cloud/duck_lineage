@@ -120,10 +120,10 @@ public:
 	/// @brief Add processing engine facet to identify the execution engine
 	/// @param version Processing engine version (required)
 	/// @param name Optional processing engine name (e.g., "DuckDB")
-	/// @param openlineage_adapter_version Optional OpenLineage adapter version
+	/// @param duck_lineage_adapter_version Optional DuckLineage adapter version
 	/// @return Reference to this builder for chaining
 	LineageEventBuilder &AddRunFacet_ProcessingEngine(const std::string &version, const std::string &name = "",
-	                                                  const std::string &openlineage_adapter_version = "");
+	                                                  const std::string &duck_lineage_adapter_version = "");
 
 	//===--------------------------------------------------------------------===//
 	// Datasets

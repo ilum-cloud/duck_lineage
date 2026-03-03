@@ -228,7 +228,7 @@ wheels = [
 ]
 
 [[package]]
-name = "duckdb-openlineage"
+name = "duckdb-duck-lineage"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

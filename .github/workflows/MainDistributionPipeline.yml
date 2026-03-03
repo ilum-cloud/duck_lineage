@@ -28,6 +28,7 @@ jobs:
     outputs:
       reduced_ci_mode: ${{ steps.config.outputs.reduced_ci_mode }}
       should_run_code: ${{ steps.config.outputs.should_run_code }}
+      cache_base_branch: ${{ steps.config.outputs.cache_base_branch }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -53,12 +54,18 @@ jobs:
           if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == refs/tags/* ]]; then
             echo "should_run_code=true" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT
+            # Tags come from main branch (stable releases)
+            echo "cache_base_branch=main" >> $GITHUB_OUTPUT
           elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
             echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=enabled" >> $GITHUB_OUTPUT
+            # For PRs, restore from the target branch (main or next)
+            echo "cache_base_branch=${{ github.base_ref }}" >> $GITHUB_OUTPUT
           else
             echo "should_run_code=${{ steps.filter.outputs.code }}" >> $GITHUB_OUTPUT
             echo "reduced_ci_mode=disabled" >> $GITHUB_OUTPUT
+            # For pushes to main/next, restore from itself
+            echo "cache_base_branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
   run-tests:
@@ -89,11 +96,10 @@ jobs:
       - name: Cache ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ccache-${{ github.job }}-${{ runner.os }}
+          key: ccache-${{ github.job }}-${{ runner.os }}-${{ github.ref_name }}
+          restore-keys: |
+            ccache-${{ github.job }}-${{ runner.os }}-${{ needs.ci-config.outputs.cache_base_branch }}
           max-size: "2G"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
 
       - name: Run tests
         run: |
@@ -111,10 +117,10 @@ jobs:
     with:
       duckdb_version: v1.4.4-6404-g4213f2bae3 # 1.5.0-dev313
       ci_tools_version: main
-      extension_name: openlineage
+      extension_name: duck_lineage
       exclude_archs: "wasm_mvp;wasm_eh;wasm_threads;windows_amd64_mingw;"
       vcpkg_commit: 84bab45d415d22042bd0b9081aea57f362da3f35
-      skip_tests: true
+      skip_tests: false
       reduced_ci_mode: ${{ needs.ci-config.outputs.reduced_ci_mode }}
 
   code-quality-check:
@@ -125,5 +131,5 @@ jobs:
     with:
       duckdb_version: v1.4.4-6404-g4213f2bae3 # 1.5.0-dev313
       ci_tools_version: main
-      extension_name: openlineage
+      extension_name: duck_lineage
       format_checks: 'format;tidy'

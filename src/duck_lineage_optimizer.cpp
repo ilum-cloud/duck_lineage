@@ -1,13 +1,13 @@
 //===----------------------------------------------------------------------===//
-// DuckDB OpenLineage Extension
+// DuckDB DuckLineage Extension
 //
-// File: openlineage_optimizer.cpp
+// File: duck_lineage_optimizer.cpp
 // Description: Optimizer extension that analyzes query plans to extract lineage.
 //              Traverses the logical plan to identify input/output datasets,
 //              extracts schema information, and injects lineage tracking.
 //===----------------------------------------------------------------------===//
 
-#include "openlineage_optimizer.hpp"
+#include "duck_lineage_optimizer.hpp"
 #include "logical_lineage_sentinel.hpp"
 #include "lineage_client.hpp"
 #include "lineage_utils.hpp"
@@ -114,6 +114,50 @@ static string GetCatalogPath(Catalog &catalog) {
 		// Fallback in case of any errors
 		return "default";
 	}
+}
+
+/// @brief Get the data storage path for a catalog.
+/// For DuckLake catalogs with external data storage (e.g. S3), this returns the
+/// DATA_PATH (stored as a tag by DuckLake). For other catalogs, returns empty.
+static string GetCatalogDataPath(Catalog &catalog) {
+	try {
+		if (catalog.IsSystemCatalog() || catalog.IsTemporaryCatalog()) {
+			return "";
+		}
+		auto &attached_db = catalog.GetAttached();
+		if (attached_db.tags.contains("data_path")) {
+			string path = attached_db.tags["data_path"];
+			// Strip trailing slash for consistent namespace/URI formatting
+			if (!path.empty() && path.back() == '/') {
+				path.pop_back();
+			}
+			return path;
+		}
+	} catch (...) {
+	}
+	return "";
+}
+
+/// @brief Resolve the namespace for a dataset in the given catalog.
+/// For DuckLake with external data storage, uses the data path as namespace.
+/// Otherwise uses the user-configured namespace.
+static string ResolveDatasetNamespace(Catalog &catalog) {
+	string data_path = GetCatalogDataPath(catalog);
+	if (!data_path.empty()) {
+		return data_path;
+	}
+	return LineageClient::Get().GetNamespace();
+}
+
+/// @brief Resolve the catalog path for use in dataSource facets.
+/// For DuckLake with external data storage, uses the data path instead of
+/// the metadata connection string (e.g. postgres conn string).
+static string ResolveCatalogDataPath(Catalog &catalog) {
+	string data_path = GetCatalogDataPath(catalog);
+	if (!data_path.empty()) {
+		return data_path;
+	}
+	return GetCatalogPath(catalog);
 }
 
 //===--------------------------------------------------------------------===//
@@ -519,16 +563,18 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 			// For regular DuckDB tables, use the original logic
 			catalog_info = ExtractCatalogInfo(catalog);
 
+			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+			string dataset_ns = ResolveDatasetNamespace(catalog);
+			string data_path = ResolveCatalogDataPath(catalog);
+
 			// For views, we don't have the schema information at this parsing stage
 			// Add input dataset without schema (it's optional)
 			json fields = json::array(); // Empty schema - we're in the parsing phase, not binding
 
-			builder.AddInputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-			                                  db_path, catalog_info);
+			builder.AddInputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, data_path, catalog_info);
 
 			// Add DatasetType facet to distinguish as TABLE
-			builder.AddInputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-			                                         "TABLE");
+			builder.AddInputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 		}
 		break;
 	}
@@ -611,8 +657,9 @@ public:
 					// This is a view - add the view as an input dataset
 					auto &view_entry = get.GetTable()->Cast<ViewCatalogEntry>();
 
-					// Get the database path to store as metadata
-					string db_path = GetCatalogPath(get.GetTable()->catalog);
+					// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+					string dataset_ns = ResolveDatasetNamespace(get.GetTable()->catalog);
+					string data_path = ResolveCatalogDataPath(get.GetTable()->catalog);
 
 					// Extract catalog information for the catalog facet
 					CatalogInfo catalog_info = ExtractCatalogInfo(get.GetTable()->catalog);
@@ -628,12 +675,11 @@ public:
 					}
 
 					// Add the view as an input dataset
-					builder.AddInputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-					                                  db_path, catalog_info);
+					builder.AddInputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, data_path,
+					                                  catalog_info);
 
 					// Add DatasetType facet to mark this as a VIEW
-					builder.AddInputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-					                                         "VIEW");
+					builder.AddInputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "VIEW");
 
 					return; // Don't process this LogicalGet further - we've handled the view
 				}
@@ -648,8 +694,9 @@ public:
 				}
 
 				// This is a regular TABLE - process it normally
-				// Get the database path to store as metadata
-				string db_path = GetCatalogPath(get.GetTable()->catalog);
+				// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+				string dataset_ns = ResolveDatasetNamespace(get.GetTable()->catalog);
+				string data_path = ResolveCatalogDataPath(get.GetTable()->catalog);
 
 				// Extract catalog information for the catalog facet
 				CatalogInfo catalog_info = ExtractCatalogInfo(get.GetTable()->catalog);
@@ -665,12 +712,10 @@ public:
 				}
 
 				// Add input dataset with both DataSource and Catalog facets
-				builder.AddInputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-				                                  db_path, catalog_info);
+				builder.AddInputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, data_path, catalog_info);
 
 				// Add DatasetType facet to distinguish between TABLE and VIEW
-				builder.AddInputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-				                                         "TABLE");
+				builder.AddInputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 			} else {
 				// Check for HMS scan function - use tags from catalog instead of parsing function name
 				if (StringUtil::StartsWith(get.function.name, "hms_scan##")) {
@@ -881,11 +926,14 @@ public:
 			// ===== Handle table inserts (INSERT INTO table) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_INSERT) {
 			auto &insert = op.Cast<LogicalInsert>();
-			// Get the database path to store as metadata
-			string db_path = GetCatalogPath(insert.table.catalog);
+			// Get the data path for dataSource facet (uses DATA_PATH for DuckLake)
+			string catalog_path = ResolveCatalogDataPath(insert.table.catalog);
 
 			// Extract catalog information for the catalog facet
 			CatalogInfo catalog_info = ExtractCatalogInfo(insert.table.catalog);
+
+			// Resolve namespace (uses DATA_PATH for DuckLake, user-configured otherwise)
+			string dataset_ns = ResolveDatasetNamespace(insert.table.catalog);
 
 			// Get fully qualified table name: catalog.schema.table
 			string fully_qualified_name =
@@ -898,26 +946,26 @@ public:
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
-			builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-			                                   db_path, catalog_info);
+			builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path, catalog_info);
 
 			// Add DatasetType facet to distinguish this as a TABLE
-			builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-			                                          "TABLE");
+			builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 
 			// Add lifecycle state change facet
 			// For INSERT, we use OVERWRITE as it modifies the dataset
-			builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-			                                                   fully_qualified_name, "OVERWRITE");
+			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
 
 			// ===== Handle table creation (CREATE TABLE) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
 			auto &create = op.Cast<LogicalCreateTable>();
-			// Get the database path to store as metadata
-			string db_path = GetCatalogPath(create.schema.catalog);
+			// Get the data path for dataSource facet (uses DATA_PATH for DuckLake)
+			string catalog_path = ResolveCatalogDataPath(create.schema.catalog);
 
 			// Extract catalog information for the catalog facet
 			CatalogInfo catalog_info = ExtractCatalogInfo(create.schema.catalog);
+
+			// Resolve namespace (uses DATA_PATH for DuckLake, user-configured otherwise)
+			string dataset_ns = ResolveDatasetNamespace(create.schema.catalog);
 
 			// Get fully qualified table name: catalog.schema.table
 			string fully_qualified_name =
@@ -930,16 +978,13 @@ public:
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
-			builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-			                                   db_path, catalog_info);
+			builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path, catalog_info);
 
 			// Add DatasetType facet to distinguish this as a TABLE
-			builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-			                                          "TABLE");
+			builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 
 			// Add lifecycle state change facet (CREATE)
-			builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-			                                                   fully_qualified_name, "CREATE");
+			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "CREATE");
 
 			// ===== Handle view creation (CREATE VIEW) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_CREATE_VIEW) {
@@ -948,8 +993,9 @@ public:
 			if (create.info && create.info->type == CatalogType::VIEW_ENTRY) {
 				auto &view_info = create.info->Cast<CreateViewInfo>();
 
-				// Get the database path to store as metadata
-				string db_path = GetCatalogPath(create.schema->catalog);
+				// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+				string dataset_ns = ResolveDatasetNamespace(create.schema->catalog);
+				string catalog_path = ResolveCatalogDataPath(create.schema->catalog);
 
 				// Extract catalog information for the catalog facet
 				CatalogInfo catalog_info = ExtractCatalogInfo(create.schema->catalog);
@@ -968,16 +1014,14 @@ public:
 				}
 
 				// Add output dataset with both DataSource and Catalog facets
-				builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-				                                   db_path, catalog_info);
+				builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path,
+				                                   catalog_info);
 
 				// Add DatasetType facet to distinguish this as a VIEW
-				builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-				                                          "VIEW");
+				builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "VIEW");
 
 				// Add lifecycle state change facet (CREATE)
-				builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-				                                                   fully_qualified_name, "CREATE");
+				builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "CREATE");
 
 				// Extract inputs from the view's query by traversing the QueryNode tree
 				// We need to manually bind the tables referenced in the view
@@ -996,7 +1040,8 @@ public:
 				if (drop_info.type == CatalogType::TABLE_ENTRY || drop_info.type == CatalogType::VIEW_ENTRY) {
 					// Get catalog and schema from drop info
 					auto &catalog = Catalog::GetCatalog(context, drop_info.catalog);
-					string db_path = GetCatalogPath(catalog);
+					string dataset_ns = ResolveDatasetNamespace(catalog);
+					string catalog_path = ResolveCatalogDataPath(catalog);
 					CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
 
 					// Build fully qualified table/view name
@@ -1014,16 +1059,14 @@ public:
 					string dataset_type = (drop_info.type == CatalogType::VIEW_ENTRY) ? "VIEW" : "TABLE";
 
 					// Add output dataset
-					builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name,
-					                                   fields, db_path, catalog_info);
+					builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path,
+					                                   catalog_info);
 
 					// Add DatasetType facet to distinguish between TABLE and VIEW
-					builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-					                                          dataset_type);
+					builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, dataset_type);
 
 					// Add lifecycle state change facet (DROP)
-					builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-					                                                   fully_qualified_name, "DROP");
+					builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "DROP");
 				}
 			}
 
@@ -1038,7 +1081,8 @@ public:
 				    alter_info.GetCatalogType() == CatalogType::VIEW_ENTRY) {
 					// Get catalog and schema from alter info
 					auto &catalog = Catalog::GetCatalog(context, alter_info.catalog);
-					string db_path = GetCatalogPath(catalog);
+					string dataset_ns = ResolveDatasetNamespace(catalog);
+					string catalog_path = ResolveCatalogDataPath(catalog);
 					CatalogInfo catalog_info_obj = ExtractCatalogInfo(catalog);
 
 					// Build fully qualified table/view name
@@ -1073,43 +1117,38 @@ public:
 							}
 
 							// Add output dataset with the new name
-							builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(),
-							                                   new_fully_qualified_name, fields, db_path,
-							                                   catalog_info_obj);
+							builder.AddOutputDatasetWithFacets(dataset_ns, new_fully_qualified_name, fields,
+							                                   catalog_path, catalog_info_obj);
 
 							// Add DatasetType facet to distinguish this as a TABLE
-							builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(),
-							                                          new_fully_qualified_name, dataset_type);
+							builder.AddOutputDatasetFacet_DatasetType(dataset_ns, new_fully_qualified_name,
+							                                          dataset_type);
 
 							// Add lifecycle state change facet (RENAME) with previous identifier
 							builder.AddOutputDatasetFacet_LifecycleStateChange(
-							    LineageClient::Get().GetNamespace(), new_fully_qualified_name, "RENAME",
-							    LineageClient::Get().GetNamespace(), fully_qualified_name);
+							    dataset_ns, new_fully_qualified_name, "RENAME", dataset_ns, fully_qualified_name);
 						} else {
 							// For other ALTER operations (ADD COLUMN, DROP COLUMN, etc.)
-							builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(),
-							                                   fully_qualified_name, fields, db_path, catalog_info_obj);
+							builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path,
+							                                   catalog_info_obj);
 
 							// Add DatasetType facet to distinguish this as a TABLE
-							builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(),
-							                                          fully_qualified_name, dataset_type);
+							builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, dataset_type);
 
 							// Add lifecycle state change facet (ALTER)
-							builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-							                                                   fully_qualified_name, "ALTER");
+							builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name,
+							                                                   "ALTER");
 						}
 					} else {
 						// For non-table ALTER operations (views, sequences, etc.)
-						builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name,
-						                                   fields, db_path, catalog_info_obj);
+						builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path,
+						                                   catalog_info_obj);
 
 						// Add DatasetType facet to distinguish between TABLE and VIEW
-						builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(),
-						                                          fully_qualified_name, dataset_type);
+						builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, dataset_type);
 
 						// Add lifecycle state change facet (ALTER)
-						builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-						                                                   fully_qualified_name, "ALTER");
+						builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "ALTER");
 					}
 				}
 			}
@@ -1117,8 +1156,9 @@ public:
 			// ===== Handle UPDATE (OVERWRITE semantics) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_UPDATE) {
 			auto &update = op.Cast<LogicalUpdate>();
-			// Get the database path to store as metadata
-			string db_path = GetCatalogPath(update.table.catalog);
+			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+			string dataset_ns = ResolveDatasetNamespace(update.table.catalog);
+			string catalog_path = ResolveCatalogDataPath(update.table.catalog);
 
 			// Extract catalog information for the catalog facet
 			CatalogInfo catalog_info = ExtractCatalogInfo(update.table.catalog);
@@ -1134,22 +1174,20 @@ public:
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
-			builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-			                                   db_path, catalog_info);
+			builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path, catalog_info);
 
 			// Add DatasetType facet to distinguish this as a TABLE
-			builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-			                                          "TABLE");
+			builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 
 			// Add lifecycle state change facet (OVERWRITE for UPDATE operations)
-			builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-			                                                   fully_qualified_name, "OVERWRITE");
+			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
 
 			// ===== Handle DELETE (partial data removal) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_DELETE) {
 			auto &del = op.Cast<LogicalDelete>();
-			// Get the database path to store as metadata
-			string db_path = GetCatalogPath(del.table.catalog);
+			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+			string dataset_ns = ResolveDatasetNamespace(del.table.catalog);
+			string catalog_path = ResolveCatalogDataPath(del.table.catalog);
 
 			// Extract catalog information for the catalog facet
 			CatalogInfo catalog_info = ExtractCatalogInfo(del.table.catalog);
@@ -1165,17 +1203,14 @@ public:
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
-			builder.AddOutputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name, fields,
-			                                   db_path, catalog_info);
+			builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path, catalog_info);
 
 			// Add DatasetType facet to distinguish this as a TABLE
-			builder.AddOutputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(), fully_qualified_name,
-			                                          "TABLE");
+			builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 
 			// Note: DELETE operations modify data but don't fit cleanly into lifecycle states
 			// We'll use OVERWRITE to indicate data modification
-			builder.AddOutputDatasetFacet_LifecycleStateChange(LineageClient::Get().GetNamespace(),
-			                                                   fully_qualified_name, "OVERWRITE");
+			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
 
 			// ===== Handle COPY TO FILE (export to files) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_COPY_TO_FILE) {
@@ -1416,25 +1451,32 @@ static void FindViewReferences(ClientContext &context, QueryNode &node, unordere
 	}
 }
 
-void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
+void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
 	// Early exit if no plan to optimize
 	if (!plan) {
 		return;
 	}
 
 	// Try to get the query via input.context.GetCurrentQuery();
-	// Due to bugs in DuckDB (https://github.com/duckdb/duckdb-java/issues/549), this may try to dereference a null
-	// pointer internally So we wrap in try-catch to avoid crashing
+	// PreparedStatements don't set active_query, so this may throw or return empty.
+	// We proceed with lineage extraction regardless — view reference detection is
+	// the only feature that requires the original SQL.
 	string query;
 	try {
 		query = input.context.GetCurrentQuery();
 	} catch (...) {
-		Printer::Print("Warning: Failed to get current query from context.");
-		return;
+		// PreparedStatements don't set active_query — this is expected
 	}
 
-	if (query.empty()) {
-		return;
+	bool has_original_query = !query.empty();
+
+	if (LineageClient::Get().IsDebug()) {
+		if (has_original_query) {
+			Printer::Print("OpenLineage Debug: Got original query string");
+		} else {
+			Printer::Print("OpenLineage Debug: No query string available (PreparedStatement?), proceeding with "
+			               "plan-based lineage");
+		}
 	}
 
 	// ===== Parse the query to detect view references BEFORE view expansion =====
@@ -1442,22 +1484,25 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// DuckDB expands views during binding, which happens before PreOptimize,
 	// so by the time we see the plan, the view references are already gone.
 	// Solution: Parse the original SQL to find view references.
-	Parser parser;
-	try {
-		parser.ParseQuery(query);
-	} catch (...) {
-		// If parsing fails, continue normally
-	}
-
-	// Track views that were referenced in the original query
+	// NOTE: This only works when the original query string is available (not PreparedStatements).
 	unordered_set<string> referenced_views;
-	if (!parser.statements.empty()) {
-		auto &statement = parser.statements[0];
-		if (statement->type == StatementType::SELECT_STATEMENT) {
-			auto &select_stmt = statement->Cast<SelectStatement>();
-			if (select_stmt.node) {
-				// Traverse the query node tree to find view references
-				FindViewReferences(input.context, *select_stmt.node, referenced_views);
+	if (has_original_query) {
+		Parser parser;
+		try {
+			parser.ParseQuery(query);
+		} catch (...) {
+			// If parsing fails, continue normally
+		}
+
+		// Track views that were referenced in the original query
+		if (!parser.statements.empty()) {
+			auto &statement = parser.statements[0];
+			if (statement->type == StatementType::SELECT_STATEMENT) {
+				auto &select_stmt = statement->Cast<SelectStatement>();
+				if (select_stmt.node) {
+					// Traverse the query node tree to find view references
+					FindViewReferences(input.context, *select_stmt.node, referenced_views);
+				}
 			}
 		}
 	}
@@ -1568,17 +1613,26 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	}
 
 	// Generate unique identifiers for this query execution
-	string jobName = GenerateJobName(*plan, query); // Readable job name from plan analysis
-	string runId = GenerateUUID();                  // Unique run ID for this execution
-	string eventTime = GetCurrentISOTime();         // Current timestamp in ISO 8601 format
+	// When query string is unavailable, use the plan representation for hash uniqueness
+	string hash_input = has_original_query ? query : plan->ToString();
+	string jobName = GenerateJobName(*plan, hash_input);
+
+	if (LineageClient::Get().IsDebug() && !has_original_query) {
+		Printer::Print("OpenLineage Debug: Using plan representation for job name hash: " + hash_input);
+	}
+	string runId = GenerateUUID();          // Unique run ID for this execution
+	string eventTime = GetCurrentISOTime(); // Current timestamp in ISO 8601 format
 
 	// Build the START event using the factory builder
 	auto builder = LineageEventBuilder::CreateStart();
 	builder.WithRunId(runId)
 	    .WithEventTime(eventTime)
 	    .WithJob(LineageClient::Get().GetNamespace(), jobName)
-	    .AddJobFacet_Sql(query)
 	    .AddRunFacet_ProcessingEngine(DuckDB::LibraryVersion(), "DuckDB");
+
+	if (has_original_query) {
+		builder.AddJobFacet_Sql(query);
+	}
 
 	// ===== Add views that were referenced in the query =====
 	for (const auto &view_name : referenced_views) {
@@ -1652,8 +1706,9 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						auto &view_entry = entry->Cast<ViewCatalogEntry>();
 						auto &catalog = Catalog::GetCatalog(input.context, catalog_name);
 
-						// Get the database path to store as metadata
-						string db_path = GetCatalogPath(catalog);
+						// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+						string dataset_ns = ResolveDatasetNamespace(catalog);
+						string data_path = ResolveCatalogDataPath(catalog);
 
 						// Extract catalog information for the catalog facet
 						CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
@@ -1677,12 +1732,11 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						}
 
 						// Add the view as an input dataset
-						builder.AddInputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name,
-						                                  fields, db_path, catalog_info);
+						builder.AddInputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, data_path,
+						                                  catalog_info);
 
 						// Add DatasetType facet to mark this as a VIEW
-						builder.AddInputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(),
-						                                         fully_qualified_name, "VIEW");
+						builder.AddInputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "VIEW");
 
 						found_view = true;
 						break;
@@ -1718,8 +1772,9 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 					if (catalog_ptr) {
 						auto &catalog = *catalog_ptr;
 
-						// Get the database path to store as metadata
-						string db_path = GetCatalogPath(catalog);
+						// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+						string dataset_ns = ResolveDatasetNamespace(catalog);
+						string data_path = ResolveCatalogDataPath(catalog);
 
 						// Extract catalog information for the catalog facet
 						CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
@@ -1739,12 +1794,11 @@ void OpenLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						}
 
 						// Add the view as an input dataset
-						builder.AddInputDatasetWithFacets(LineageClient::Get().GetNamespace(), fully_qualified_name,
-						                                  fields, db_path, catalog_info);
+						builder.AddInputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, data_path,
+						                                  catalog_info);
 
 						// Add DatasetType facet to mark this as a VIEW
-						builder.AddInputDatasetFacet_DatasetType(LineageClient::Get().GetNamespace(),
-						                                         fully_qualified_name, "VIEW");
+						builder.AddInputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "VIEW");
 
 						found_view = true;
 					}

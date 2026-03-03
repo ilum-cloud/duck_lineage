@@ -62,8 +62,11 @@ PhysicalLineageSentinel::~PhysicalLineageSentinel() {
 		builder.WithRunId(run_id)
 		    .WithEventTime(eventTime)
 		    .WithJob(LineageClient::Get().GetNamespace(), job_name)
-		    .AddJobFacet_Sql(query)
 		    .WithOutputs(outputs);
+
+		if (!query.empty()) {
+			builder.AddJobFacet_Sql(query);
+		}
 
 		// Add output statistics for successful queries
 		if (success) {

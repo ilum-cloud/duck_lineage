@@ -155,7 +155,7 @@ private:
 
 	// ===== Configuration State =====
 	mutable std::mutex config_mutex; ///< Protects configuration fields
-	std::string openlineage_url;     ///< Target URL for OpenLineage events
+	std::string duck_lineage_url;    ///< Target URL for OpenLineage events
 	std::string api_key;             ///< Optional API key for authentication
 	std::string lineage_namespace;   ///< Namespace for lineage events
 	bool debug_mode = false;         ///< Enable debug logging

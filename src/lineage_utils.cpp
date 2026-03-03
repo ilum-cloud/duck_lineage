@@ -418,7 +418,14 @@ CatalogInfo ExtractCatalogInfo(Catalog &catalog) {
 			// DuckLake catalog
 			info.type = "ducklake";
 			info.metadata_uri = FormatMetadataPath(db_path);
-			// warehouse_uri remains empty for DuckLake
+			// DuckLake stores data_path as a tag on the AttachedDatabase
+			if (attached_db.tags.contains("data_path")) {
+				info.warehouse_uri = attached_db.tags["data_path"];
+				// Strip trailing slash for consistent URI formatting
+				if (!info.warehouse_uri.empty() && info.warehouse_uri.back() == '/') {
+					info.warehouse_uri.pop_back();
+				}
+			}
 		} else {
 			// Extension-based catalog (Postgres, Iceberg, Delta Lake, etc.)
 			info.type = catalog_type;
