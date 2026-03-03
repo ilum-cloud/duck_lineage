@@ -294,9 +294,9 @@ LineageEventBuilder &LineageEventBuilder::AddRunFacet_ErrorMessage(const std::st
 	return *this;
 }
 
-LineageEventBuilder &LineageEventBuilder::AddRunFacet_ProcessingEngine(const std::string &version,
-                                                                       const std::string &name,
-                                                                       const std::string &openlineage_adapter_version) {
+LineageEventBuilder &
+LineageEventBuilder::AddRunFacet_ProcessingEngine(const std::string &version, const std::string &name,
+                                                  const std::string &duck_lineage_adapter_version) {
 	// Ensure run exists
 	if (!event_json.contains("run")) {
 		event_json["run"] = json::object();
@@ -315,8 +315,8 @@ LineageEventBuilder &LineageEventBuilder::AddRunFacet_ProcessingEngine(const std
 	if (!name.empty()) {
 		processing_engine_facet["name"] = name;
 	}
-	if (!openlineage_adapter_version.empty()) {
-		processing_engine_facet["openlineageAdapterVersion"] = openlineage_adapter_version;
+	if (!duck_lineage_adapter_version.empty()) {
+		processing_engine_facet["openlineageAdapterVersion"] = duck_lineage_adapter_version;
 	}
 
 	event_json["run"]["facets"]["processing_engine"] = processing_engine_facet;

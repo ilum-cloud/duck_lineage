@@ -1,7 +1,7 @@
 //===----------------------------------------------------------------------===//
-// DuckDB OpenLineage Extension
+// DuckDB DuckLineage Extension
 //
-// File: openlineage_optimizer.hpp
+// File: duck_lineage_optimizer.hpp
 // Description: Optimizer extension that analyzes query plans and injects
 //              lineage tracking. Runs during the pre-optimization phase to
 //              extract input/output datasets and wrap the plan with a sentinel.
@@ -14,7 +14,7 @@
 
 namespace duckdb {
 
-/// @class OpenLineageOptimizer
+/// @class DuckLineageOptimizer
 /// @brief Optimizer extension that injects lineage tracking into query plans.
 ///
 /// This class provides a pre-optimization hook that:
@@ -30,7 +30,7 @@ namespace duckdb {
 ///
 /// It respects parent run context from environment variables for integration
 /// with external orchestration systems.
-class OpenLineageOptimizer {
+class DuckLineageOptimizer {
 public:
 	/// @brief Pre-optimization hook that injects lineage tracking.
 	/// @param input Optimizer input containing the client context.
