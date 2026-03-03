@@ -10,7 +10,11 @@ include extension-ci-tools/makefiles/duckdb_extension.Makefile
 # Override distribution workflow's test target to run our pytest suite
 # Runs integration tests (excludes ducklake_postgres which needs extra infra)
 test_release:
-	@if ! command -v docker >/dev/null 2>&1; then \
+	@if [ "$(SKIP_TESTS)" = "1" ] || [ "$(LINUX_CI_IN_DOCKER)" = "0" ]; then \
+		echo "Skipping tests (SKIP_TESTS=$(SKIP_TESTS), LINUX_CI_IN_DOCKER=$(LINUX_CI_IN_DOCKER))"; \
+		exit 0; \
+	fi; \
+	if ! command -v docker >/dev/null 2>&1; then \
 		echo "Skipping tests: docker not available"; \
 		exit 0; \
 	fi; \
