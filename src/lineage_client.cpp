@@ -322,7 +322,7 @@ void LineageClient::PostToBackend(const std::string &payload) {
 
 void LineageClient::BackgroundWorker() {
 	// Continuously process events until shutdown is requested
-	while (!shutdown_requested) {
+	while (true) {
 		std::string payload;
 
 		// Wait for an event to become available or shutdown signal
