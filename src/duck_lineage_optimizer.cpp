@@ -1844,6 +1844,19 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 		}
 	}
 
+	// Skip lineage for statements with no datasets (SET, RESET, PRAGMA, etc.)
+	// These are configuration statements that don't involve data operations.
+	// Emitting events for them causes namespace mismatches (e.g., SET duck_lineage_namespace
+	// sends START to the old namespace and COMPLETE to the new one).
+	bool has_inputs = event.contains("inputs") && event["inputs"].is_array() && !event["inputs"].empty();
+	bool has_outputs = event.contains("outputs") && event["outputs"].is_array() && !event["outputs"].empty();
+	if (!has_inputs && !has_outputs) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Skipping lineage for statement with no datasets");
+		}
+		return;
+	}
+
 	// Send the deduplicated event
 	LineageClient::Get().SendEvent(event.dump());
 
