@@ -82,14 +82,6 @@ def demo_seed():
         f"stderr: {result.stderr[-2000:]}"
     )
     yield
-    # Teardown
-    subprocess.run(
-        ["bash", DEMO_SCRIPT, "--down"],
-        cwd=REPO_ROOT,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
 
 
 @pytest.fixture(scope="module")

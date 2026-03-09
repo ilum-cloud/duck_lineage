@@ -43,7 +43,7 @@ test_release:
 
 #### Testing targets ####
 
-.PHONY: test-deps test-setup test-all test-integration test-smoke test-ducklake marquez-up marquez-down marquez-logs ducklake-up ducklake-down test-clean test-help
+.PHONY: test-deps test-setup test-all test-integration test-smoke test-ducklake test-demo marquez-up marquez-down marquez-logs ducklake-up ducklake-down test-clean test-help
 
 test-help:
 	@echo "Testing Targets:"
@@ -53,6 +53,7 @@ test-help:
 	@echo "  test-integration - Run integration tests only"
 	@echo "  test-smoke       - Run quick smoke tests"
 	@echo "  test-ducklake    - Run DuckLake postgres+S3 tests"
+	@echo "  test-demo        - Run demo quickstart tests (manages own infra)"
 	@echo "  marquez-up       - Start Marquez services"
 	@echo "  marquez-down     - Stop Marquez services"
 	@echo "  ducklake-up      - Start Marquez + DuckLake infra (postgres, MinIO)"
@@ -79,7 +80,7 @@ test-setup: test-deps marquez-up
 
 test-all: release test-deps ducklake-up
 	@echo "Running all tests..."
-	cd test && uv run pytest -v
+	cd test && uv run pytest -v -m "not demo"
 
 test-integration: release test-deps marquez-up
 	@echo "Running integration tests..."
@@ -92,6 +93,10 @@ test-smoke: release test-deps marquez-up
 test-ducklake: release test-deps ducklake-up
 	@echo "Running DuckLake postgres+S3 tests..."
 	cd test && uv run pytest -v -m ducklake_postgres
+
+test-demo: release test-deps
+	@echo "Running demo tests..."
+	cd test && uv run pytest -v -m demo --timeout=600
 
 marquez-up:
 	@echo "Starting Marquez..."
