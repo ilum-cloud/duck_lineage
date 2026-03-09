@@ -29,7 +29,6 @@ from event_helpers import (
     assert_output_has_statistics,
 )
 
-
 # ── Views ──────────────────────────────────────────────────────────────
 
 

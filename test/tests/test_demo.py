@@ -27,6 +27,7 @@ def _check_marquez():
     """Override conftest's _check_marquez — demo_seed starts Marquez itself."""
     pass
 
+
 REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 DEMO_SCRIPT = os.path.join(REPO_ROOT, "test", "demo.sh")
 DEMO_NAMESPACE = "demo"
@@ -106,9 +107,9 @@ def test_demo_datasets_exist(marquez):
     """All 10 expected tables appear as datasets in Marquez."""
     dataset_names = {n.lower() for n in marquez.list_dataset_names(DEMO_NAMESPACE)}
     for table in ALL_TABLES:
-        assert any(table.lower() in n for n in dataset_names), (
-            f"Expected dataset '{table}' not found. Got: {sorted(dataset_names)}"
-        )
+        assert any(
+            table.lower() in n for n in dataset_names
+        ), f"Expected dataset '{table}' not found. Got: {sorted(dataset_names)}"
 
 
 def _find_start_events_by_output(events, output_table):
@@ -117,7 +118,7 @@ def _find_start_events_by_output(events, output_table):
     for e in events:
         if e.get("eventType") != "START":
             continue
-        for out in (e.get("outputs") or []):
+        for out in e.get("outputs") or []:
             if _short_name(out.get("name", "")).lower() == output_table.lower():
                 result.append(e)
                 break
@@ -134,18 +135,14 @@ def test_demo_staging_lineage(marquez):
     assert sod_events, "No START events for stg_order_details"
     sod_inputs = _input_names(sod_events[0])
     for expected in ("orders", "order_items", "products"):
-        assert expected in sod_inputs, (
-            f"stg_order_details missing input '{expected}'. Got: {sod_inputs}"
-        )
+        assert expected in sod_inputs, f"stg_order_details missing input '{expected}'. Got: {sod_inputs}"
 
     # stg_customer_orders <- customers, orders
     sco_events = _find_start_events_by_output(events, "stg_customer_orders")
     assert sco_events, "No START events for stg_customer_orders"
     sco_inputs = _input_names(sco_events[0])
     for expected in ("customers", "orders"):
-        assert expected in sco_inputs, (
-            f"stg_customer_orders missing input '{expected}'. Got: {sco_inputs}"
-        )
+        assert expected in sco_inputs, f"stg_customer_orders missing input '{expected}'. Got: {sco_inputs}"
 
 
 def test_demo_analytics_lineage(marquez):
@@ -167,9 +164,9 @@ def test_demo_analytics_lineage(marquez):
     assert clv_events, "No START events for analytics_customer_lifetime_value"
     clv_inputs = _input_names(clv_events[0])
     for expected in ("stg_customer_orders", "order_items", "products"):
-        assert expected in clv_inputs, (
-            f"analytics_customer_lifetime_value missing input '{expected}'. Got: {clv_inputs}"
-        )
+        assert (
+            expected in clv_inputs
+        ), f"analytics_customer_lifetime_value missing input '{expected}'. Got: {clv_inputs}"
 
 
 def test_demo_executive_summary_lineage(marquez):
@@ -184,9 +181,7 @@ def test_demo_executive_summary_lineage(marquez):
         "analytics_customer_lifetime_value",
         "analytics_daily_sales",
     ):
-        assert expected in es_inputs, (
-            f"executive_summary missing input '{expected}'. Got: {es_inputs}"
-        )
+        assert expected in es_inputs, f"executive_summary missing input '{expected}'. Got: {es_inputs}"
 
 
 def test_demo_events_have_valid_structure(marquez):
@@ -226,9 +221,9 @@ def test_demo_etl_jobs_exist(marquez):
     job_names = {j.get("name", "").lower() for j in jobs}
 
     for table in ETL_OUTPUT_TABLES:
-        assert any(table.lower() in name for name in job_names), (
-            f"No job found for table '{table}'. Jobs: {sorted(job_names)}"
-        )
+        assert any(
+            table.lower() in name for name in job_names
+        ), f"No job found for table '{table}'. Jobs: {sorted(job_names)}"
 
 
 def test_demo_jobs_have_completed_runs(marquez):
@@ -241,9 +236,7 @@ def test_demo_jobs_have_completed_runs(marquez):
 
         job = matching[0]
         latest_run = job.get("latestRun") or {}
-        assert latest_run, (
-            f"Job for '{table}' ({job.get('name')}) has no latestRun"
-        )
+        assert latest_run, f"Job for '{table}' ({job.get('name')}) has no latestRun"
         assert latest_run.get("state") == "COMPLETED", (
             f"Job for '{table}' ({job.get('name')}) latestRun.state is "
             f"'{latest_run.get('state')}', expected 'COMPLETED'"
@@ -254,18 +247,9 @@ def test_demo_no_orphaned_running_runs(marquez):
     """No ETL job has latestRun.state == RUNNING (catches lost COMPLETE events)."""
     jobs = marquez.list_jobs(DEMO_NAMESPACE)
     # Only check ETL jobs (those matching our known output tables)
-    etl_jobs = [
-        j for j in jobs
-        if any(table.lower() in j.get("name", "").lower() for table in ETL_OUTPUT_TABLES)
-    ]
-    running_jobs = [
-        j.get("name")
-        for j in etl_jobs
-        if (j.get("latestRun") or {}).get("state") == "RUNNING"
-    ]
-    assert not running_jobs, (
-        f"Jobs stuck in RUNNING state (missing COMPLETE events): {running_jobs}"
-    )
+    etl_jobs = [j for j in jobs if any(table.lower() in j.get("name", "").lower() for table in ETL_OUTPUT_TABLES)]
+    running_jobs = [j.get("name") for j in etl_jobs if (j.get("latestRun") or {}).get("state") == "RUNNING"]
+    assert not running_jobs, f"Jobs stuck in RUNNING state (missing COMPLETE events): {running_jobs}"
 
 
 def test_demo_datasets_have_schema(marquez):
@@ -281,10 +265,7 @@ def test_demo_datasets_have_schema(marquez):
         assert dataset is not None, f"Dataset '{full_name}' not found in Marquez"
 
         fields = dataset.get("fields") or []
-        assert len(fields) > 0, (
-            f"Dataset '{table}' has no schema fields. "
-            "Schema extraction may not be working."
-        )
+        assert len(fields) > 0, f"Dataset '{table}' has no schema fields. " "Schema extraction may not be working."
 
 
 def test_demo_start_complete_pairs(marquez):
@@ -303,9 +284,7 @@ def test_demo_start_complete_pairs(marquez):
             complete_jobs.add(job_name)
 
     missing_complete = start_jobs - complete_jobs
-    assert not missing_complete, (
-        f"Jobs with START but no COMPLETE event (event loss): {sorted(missing_complete)}"
-    )
+    assert not missing_complete, f"Jobs with START but no COMPLETE event (event loss): {sorted(missing_complete)}"
 
 
 def test_demo_teardown():
@@ -318,8 +297,7 @@ def test_demo_teardown():
         timeout=120,
     )
     assert result.returncode == 0, (
-        f"demo.sh --down failed (rc={result.returncode}):\n"
-        f"stderr: {result.stderr[-1000:]}"
+        f"demo.sh --down failed (rc={result.returncode}):\n" f"stderr: {result.stderr[-1000:]}"
     )
 
     # Marquez should no longer be reachable
@@ -346,7 +324,6 @@ def test_demo_clean():
         timeout=120,
     )
     assert result.returncode == 0, (
-        f"demo.sh --clean failed (rc={result.returncode}):\n"
-        f"stderr: {result.stderr[-1000:]}"
+        f"demo.sh --clean failed (rc={result.returncode}):\n" f"stderr: {result.stderr[-1000:]}"
     )
     assert not os.path.isdir(duckdb_dir), f"{duckdb_dir} should be removed after --clean"
