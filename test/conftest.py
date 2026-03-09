@@ -62,9 +62,7 @@ def extension_path():
         if path.exists():
             return str(path)
 
-    pytest.skip(
-        f"Extension not found. Build it first with 'make'. Tried: {[str(p) for p in possible_paths]}"
-    )
+    pytest.skip(f"Extension not found. Build it first with 'make'. Tried: {[str(p) for p in possible_paths]}")
 
 
 @pytest.fixture
@@ -114,26 +112,22 @@ def sample_table(duckdb_with_extension):
     """Create a sample table for testing."""
     conn = duckdb_with_extension
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE test_employees (
             id INTEGER,
             name VARCHAR,
             department VARCHAR,
             salary DECIMAL(10,2)
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO test_employees VALUES
             (1, 'Alice', 'Engineering', 95000),
             (2, 'Bob', 'Sales', 75000),
             (3, 'Carol', 'Engineering', 105000),
             (4, 'Dave', 'Marketing', 65000)
-    """
-    )
+    """)
 
     return conn
 

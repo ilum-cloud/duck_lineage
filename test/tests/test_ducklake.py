@@ -59,9 +59,7 @@ def duckdb_with_ducklake(lineage_connection, ducklake_db_file, ducklake_data_pat
 
     # Attach DuckLake storage: ATTACH 'ducklake:<path>.ducklake' AS name (DATA_PATH '<data-path>')
     try:
-        conn.execute(
-            f"ATTACH 'ducklake:{ducklake_db_file}' AS ducklake_db (DATA_PATH '{ducklake_data_path}')"
-        )
+        conn.execute(f"ATTACH 'ducklake:{ducklake_db_file}' AS ducklake_db (DATA_PATH '{ducklake_data_path}')")
     except Exception as e:
         pytest.skip(f"Could not attach DuckLake: {e}")
 
@@ -82,16 +80,14 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create a table in DuckLake
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.customers (
             id INTEGER,
             name VARCHAR,
             email VARCHAR,
             created_date DATE
         )
-    """
-    )
+    """)
 
     # Get the dataset from Marquez
     dataset_name = "ducklake_db.main.customers"
@@ -110,9 +106,7 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     assert "id" in field_names, "Should have 'id' field"
     assert "name" in field_names, "Should have 'name' field"
     assert "email" in field_names, "Should have 'email' field"
-    assert (
-        "created_date" in field_names or "createdDate" in field_names
-    ), "Should have date field"
+    assert "created_date" in field_names or "createdDate" in field_names, "Should have date field"
 
     # Check field types
     id_field = next((f for f in fields if f["name"] == "id"), None)
@@ -126,8 +120,7 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     name_field = next((f for f in fields if f["name"] == "name"), None)
     assert name_field is not None, "name field should exist"
     assert (
-        "varchar" in name_field["type"].lower()
-        or "string" in name_field["type"].lower()
+        "varchar" in name_field["type"].lower() or "string" in name_field["type"].lower()
     ), f"name field should be VARCHAR, got {name_field['type']}"
 
     # Check dataSource facet
@@ -143,12 +136,8 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     # Check catalog facet
     assert "catalog" in facets, "Dataset should have catalog facet"
     catalog = facets["catalog"]
-    assert (
-        catalog["name"] == "ducklake_db"
-    ), f"Catalog name should be 'ducklake_db', got {catalog['name']}"
-    assert (
-        catalog["type"] == "ducklake"
-    ), f"Catalog type should be 'ducklake', got {catalog['type']}"
+    assert catalog["name"] == "ducklake_db", f"Catalog name should be 'ducklake_db', got {catalog['name']}"
+    assert catalog["type"] == "ducklake", f"Catalog type should be 'ducklake', got {catalog['type']}"
 
 
 @pytest.mark.integration
@@ -158,24 +147,20 @@ def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create and populate a table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.products (
             id INTEGER,
             product_name VARCHAR,
             price DECIMAL(10,2)
         )
-    """
-    )
+    """)
 
     # Execute INSERT
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO ducklake_db.products VALUES
             (1, 'Laptop', 999.99),
             (2, 'Mouse', 29.99)
-    """
-    )
+    """)
 
     # Verify data was inserted
     result = conn.execute("SELECT COUNT(*) FROM ducklake_db.products").fetchone()
@@ -191,9 +176,7 @@ def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
     assert "fields" in dataset, "Dataset should have fields"
     field_names = {f["name"] for f in dataset["fields"]}
     assert "id" in field_names, "Should have id field"
-    assert (
-        "product_name" in field_names or "productName" in field_names
-    ), "Should have product_name field"
+    assert "product_name" in field_names or "productName" in field_names, "Should have product_name field"
     assert "price" in field_names, "Should have price field"
 
     # Verify dataSource facet
@@ -209,32 +192,26 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create source data
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.orders (
             id INTEGER,
             customer_id INTEGER,
             total_amount DECIMAL(10,2)
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO ducklake_db.orders VALUES
             (1, 100, 150.00),
             (2, 101, 250.50)
-    """
-    )
+    """)
 
     # Run a SELECT query
-    conn.execute(
-        """
+    conn.execute("""
         SELECT customer_id, SUM(total_amount) as total
         FROM ducklake_db.orders
         GROUP BY customer_id
-    """
-    )
+    """)
 
     # Verify the source dataset exists and is tracked in Marquez
     dataset = marquez_client.wait_for_dataset_with_facets(
@@ -246,12 +223,8 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
     assert "fields" in dataset, "Dataset should have fields"
     field_names = {f["name"] for f in dataset["fields"]}
     assert "id" in field_names, "Should have id field"
-    assert (
-        "customer_id" in field_names or "customerId" in field_names
-    ), "Should have customer_id field"
-    assert (
-        "total_amount" in field_names or "totalAmount" in field_names
-    ), "Should have total_amount field"
+    assert "customer_id" in field_names or "customerId" in field_names, "Should have customer_id field"
+    assert "total_amount" in field_names or "totalAmount" in field_names, "Should have total_amount field"
 
     # Verify catalog type
     facets = dataset.get("facets", {})
@@ -260,36 +233,29 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
 
 
 @pytest.mark.integration
-def test_ducklake_ctas_lineage_with_inputs_outputs(
-    duckdb_with_ducklake, marquez_client
-):
+def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez_client):
     """Test CREATE TABLE AS SELECT correctly tracks both input and output datasets."""
     conn, ducklake_ns = duckdb_with_ducklake
     namespace = ducklake_ns
 
     # Create source table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.raw_sales (
             sale_id INTEGER,
             product VARCHAR,
             amount DECIMAL(10,2),
             region VARCHAR
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO ducklake_db.raw_sales VALUES
             (1, 'Widget', 100.00, 'North'),
             (2, 'Gadget', 150.00, 'South')
-    """
-    )
+    """)
 
     # Create a summary table using CTAS
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.regional_sales AS
         SELECT
             region,
@@ -297,8 +263,7 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(
             SUM(amount) as total_amount
         FROM ducklake_db.raw_sales
         GROUP BY region
-    """
-    )
+    """)
 
     # Verify the new table was created
     result = conn.execute("SELECT COUNT(*) FROM ducklake_db.regional_sales").fetchone()
@@ -308,87 +273,67 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(
     input_dataset = marquez_client.wait_for_dataset_with_facets(
         namespace, "ducklake_db.main.raw_sales", ["catalog"], timeout_seconds=30
     )
-    assert (
-        input_dataset is not None
-    ), "Input dataset (raw_sales) should exist in Marquez"
+    assert input_dataset is not None, "Input dataset (raw_sales) should exist in Marquez"
 
     # Use wait_for_dataset_with_facets for CTAS output which may take longer to register
     output_dataset = marquez_client.wait_for_dataset_with_facets(
         namespace, "ducklake_db.main.regional_sales", ["catalog"], timeout_seconds=30
     )
-    assert (
-        output_dataset is not None
-    ), "Output dataset (regional_sales) should exist in Marquez"
+    assert output_dataset is not None, "Output dataset (regional_sales) should exist in Marquez"
 
     # Check output schema has the correct fields
     fields = output_dataset.get("fields", [])
     field_names = {f["name"] for f in fields}
     assert "region" in field_names, "Should have region field"
-    assert (
-        "sale_count" in field_names or "saleCount" in field_names
-    ), "Should have sale_count field"
-    assert (
-        "total_amount" in field_names or "totalAmount" in field_names
-    ), "Should have total_amount field"
+    assert "sale_count" in field_names or "saleCount" in field_names, "Should have sale_count field"
+    assert "total_amount" in field_names or "totalAmount" in field_names, "Should have total_amount field"
 
     # Verify both datasets have DuckLake catalog type
     input_facets = input_dataset.get("facets", {})
     assert "catalog" in input_facets, "Input dataset should have catalog facet"
-    assert (
-        input_facets["catalog"]["type"] == "ducklake"
-    ), "Input catalog type should be ducklake"
+    assert input_facets["catalog"]["type"] == "ducklake", "Input catalog type should be ducklake"
 
     output_facets = output_dataset.get("facets", {})
     assert "catalog" in output_facets, "Output dataset should have catalog facet"
-    assert (
-        output_facets["catalog"]["type"] == "ducklake"
-    ), "Output catalog type should be ducklake"
+    assert output_facets["catalog"]["type"] == "ducklake", "Output catalog type should be ducklake"
 
 
 @pytest.mark.integration
 def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     """Test that cross-database queries track datasets from both sources with different catalog types."""
     conn, ducklake_ns = duckdb_with_ducklake
-    user_namespace = conn.execute(
-        "SELECT current_setting('duck_lineage_namespace')"
-    ).fetchone()[0]
+    user_namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create table in DuckLake
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.inventory (
             product_id INTEGER,
             quantity INTEGER
         )
-    """
-    )
+    """)
 
     conn.execute("INSERT INTO ducklake_db.inventory VALUES (1, 100), (2, 50)")
 
     # Create table in memory
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE local_suppliers (
             supplier_id INTEGER,
             product_id INTEGER,
             supplier_name VARCHAR
         )
-    """
-    )
+    """)
 
     conn.execute("INSERT INTO local_suppliers VALUES (1, 1, 'Acme Corp')")
 
     # Join across DuckLake and local tables
-    conn.execute(
-        """
+    conn.execute("""
         SELECT
             i.product_id,
             i.quantity,
             s.supplier_name
         FROM ducklake_db.inventory i
         JOIN local_suppliers s ON i.product_id = s.product_id
-    """
-    )
+    """)
 
     # Verify both datasets exist in Marquez with catalog facets
     # DuckLake datasets use the data path as namespace
@@ -418,12 +363,8 @@ def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     ), f"Memory dataset should have catalog type 'memory', got {suppliers_facets['catalog']['type']}"
 
     # Verify both have different catalog names
-    assert (
-        inventory_facets["catalog"]["name"] == "ducklake_db"
-    ), "DuckLake catalog name should be ducklake_db"
-    assert (
-        suppliers_facets["catalog"]["name"] == "memory"
-    ), "Memory catalog name should be memory"
+    assert inventory_facets["catalog"]["name"] == "ducklake_db", "DuckLake catalog name should be ducklake_db"
+    assert suppliers_facets["catalog"]["name"] == "memory", "Memory catalog name should be memory"
 
 
 @pytest.mark.integration
@@ -433,8 +374,7 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create source table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.events (
             event_id INTEGER,
             event_type VARCHAR,
@@ -442,20 +382,16 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
             user_id INTEGER,
             metadata VARCHAR
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO ducklake_db.events VALUES
             (1, 'login', '2024-01-01 10:00:00', 100, 'ip=1.2.3.4'),
             (2, 'purchase', '2024-01-01 10:05:00', 101, 'ip=1.2.3.5')
-    """
-    )
+    """)
 
     # Create derived table with transformed fields
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.user_summaries AS
         SELECT
             user_id,
@@ -464,8 +400,7 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
             MAX(event_timestamp) as last_seen
         FROM ducklake_db.events
         GROUP BY user_id
-    """
-    )
+    """)
 
     # Get the derived dataset with fields populated
     summary_dataset = marquez_client.wait_for_dataset_with_fields(
@@ -505,14 +440,12 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client)
     namespace = ducklake_ns
 
     # Create a table
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE ducklake_db.test_table (
             id INTEGER,
             data VARCHAR
         )
-    """
-    )
+    """)
 
     # Get the dataset with dataSource facet
     dataset = marquez_client.wait_for_dataset_with_facets(
@@ -535,9 +468,7 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client)
     # Should contain file:// reference to the ducklake data directory
     assert "file://" in uri, f"URI should have file:// scheme, got {uri}"
     # The path should reference the data path directory
-    assert (
-        "ducklake_data" in uri or ducklake_ns in uri
-    ), f"URI should reference the data path, got {uri}"
+    assert "ducklake_data" in uri or ducklake_ns in uri, f"URI should reference the data path, got {uri}"
 
     # Name should match URI (both are the formatted path)
     assert name == uri, f"Name should match URI, got name={name}, uri={uri}"
@@ -569,21 +500,13 @@ def test_ducklake_catalog_facet_content(duckdb_with_ducklake, marquez_client):
     assert "type" in catalog, "Catalog should have type"
     assert "framework" in catalog, "Catalog should have framework"
 
-    assert (
-        catalog["name"] == "ducklake_db"
-    ), f"Catalog name should be 'ducklake_db', got {catalog['name']}"
-    assert (
-        catalog["type"] == "ducklake"
-    ), f"Catalog type should be 'ducklake', got {catalog['type']}"
-    assert (
-        catalog["framework"] == "duckdb"
-    ), f"Framework should be 'duckdb', got {catalog['framework']}"
+    assert catalog["name"] == "ducklake_db", f"Catalog name should be 'ducklake_db', got {catalog['name']}"
+    assert catalog["type"] == "ducklake", f"Catalog type should be 'ducklake', got {catalog['type']}"
+    assert catalog["framework"] == "duckdb", f"Framework should be 'duckdb', got {catalog['framework']}"
 
     # Check optional fields
     if "source" in catalog and catalog["source"]:
-        assert (
-            catalog["source"] == "duckdb"
-        ), f"Source should be 'duckdb', got {catalog['source']}"
+        assert catalog["source"] == "duckdb", f"Source should be 'duckdb', got {catalog['source']}"
 
     # metadata_uri should be set
     if "metadataUri" in catalog or "metadata_uri" in catalog:

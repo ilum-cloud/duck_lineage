@@ -51,17 +51,13 @@ def _dump_dataset_debug(dataset_name, namespaces_to_check):
     # Check specific namespaces
     for ns in namespaces_to_check:
         try:
-            resp = requests.get(
-                f"{MARQUEZ_API}/namespaces/{ns}/datasets/{dataset_name}", timeout=5
-            )
+            resp = requests.get(f"{MARQUEZ_API}/namespaces/{ns}/datasets/{dataset_name}", timeout=5)
             if resp.status_code == 200:
                 ds = resp.json()
                 lines.append(f"  FOUND in namespace '{ns}': name={ds.get('name')}")
                 facets = ds.get("facets", {})
                 if "dataSource" in facets:
-                    lines.append(
-                        f"    dataSource.uri = {facets['dataSource'].get('uri')}"
-                    )
+                    lines.append(f"    dataSource.uri = {facets['dataSource'].get('uri')}")
                 if "catalog" in facets:
                     cat = facets["catalog"]
                     lines.append(
@@ -74,9 +70,7 @@ def _dump_dataset_debug(dataset_name, namespaces_to_check):
 
     # List all namespaces that have datasets matching this name
     try:
-        resp = requests.get(
-            f"{MARQUEZ_API}/namespaces", params={"limit": 100}, timeout=5
-        )
+        resp = requests.get(f"{MARQUEZ_API}/namespaces", params={"limit": 100}, timeout=5)
         if resp.status_code == 200:
             all_ns = [n["name"] for n in resp.json().get("namespaces", [])]
             lines.append(f"  All namespaces: {all_ns}")
@@ -90,14 +84,10 @@ def _dump_dataset_debug(dataset_name, namespaces_to_check):
                     )
                     if r2.status_code == 200:
                         ds = r2.json()
-                        lines.append(
-                            f"  FOUND in OTHER namespace '{ns}': name={ds.get('name')}"
-                        )
+                        lines.append(f"  FOUND in OTHER namespace '{ns}': name={ds.get('name')}")
                         facets = ds.get("facets", {})
                         if "dataSource" in facets:
-                            lines.append(
-                                f"    dataSource.uri = {facets['dataSource'].get('uri')}"
-                            )
+                            lines.append(f"    dataSource.uri = {facets['dataSource'].get('uri')}")
                         if "catalog" in facets:
                             cat = facets["catalog"]
                             lines.append(
@@ -123,9 +113,7 @@ def _is_port_open(host, port, timeout=2):
 def _check_ducklake_infra():
     """Skip all tests in this module if DuckLake infrastructure is not available."""
     if not _is_port_open(DUCKLAKE_PG_HOST, DUCKLAKE_PG_PORT):
-        pytest.skip(
-            f"DuckLake PostgreSQL not reachable at {DUCKLAKE_PG_HOST}:{DUCKLAKE_PG_PORT}"
-        )
+        pytest.skip(f"DuckLake PostgreSQL not reachable at {DUCKLAKE_PG_HOST}:{DUCKLAKE_PG_PORT}")
     minio_host, minio_port = MINIO_ENDPOINT.split(":")
     if not _is_port_open(minio_host, int(minio_port)):
         pytest.skip(f"MinIO not reachable at {MINIO_ENDPOINT}")
@@ -168,9 +156,7 @@ def duckdb_with_ducklake_pg(extension_path, marquez_api_url):
     conn.execute("SET s3_url_style = 'path'")
 
     try:
-        conn.execute(
-            f"ATTACH 'ducklake:{DUCKLAKE_PG_CONN}' AS ducklake_db (DATA_PATH '{S3_DATA_PATH}')"
-        )
+        conn.execute(f"ATTACH 'ducklake:{DUCKLAKE_PG_CONN}' AS ducklake_db (DATA_PATH '{S3_DATA_PATH}')")
     except Exception as e:
         conn.close()
         pytest.skip(f"Could not attach DuckLake with postgres+S3: {e}")
@@ -229,9 +215,7 @@ def test_pg_s3_dataset_namespace(duckdb_with_ducklake_pg, marquez_client):
     else:
         pytest.fail(
             f"Dataset not found in any expected namespace.\n"
-            + _dump_dataset_debug(
-                "ducklake_db.main.ns_test", [S3_DATA_PATH, DUCKLAKE_TEST_NAMESPACE]
-            )
+            + _dump_dataset_debug("ducklake_db.main.ns_test", [S3_DATA_PATH, DUCKLAKE_TEST_NAMESPACE])
         )
 
 
@@ -260,9 +244,7 @@ def test_pg_s3_datasource_uri(duckdb_with_ducklake_pg, marquez_client):
 
     uri = dataset["facets"]["dataSource"]["uri"]
     assert "s3://" in uri, f"dataSource.uri should reference S3, got {uri}"
-    assert (
-        "postgres" not in uri.lower()
-    ), f"dataSource.uri should NOT be postgres, got {uri}"
+    assert "postgres" not in uri.lower(), f"dataSource.uri should NOT be postgres, got {uri}"
 
 
 @pytest.mark.ducklake_postgres
@@ -288,12 +270,8 @@ def test_pg_s3_catalog_facet_metadata_uri(duckdb_with_ducklake_pg, marquez_clien
     )
 
     catalog = dataset["facets"]["catalog"]
-    assert (
-        catalog["type"] == "ducklake"
-    ), f"Expected type 'ducklake', got {catalog['type']}"
-    assert (
-        catalog["name"] == "ducklake_db"
-    ), f"Expected name 'ducklake_db', got {catalog['name']}"
+    assert catalog["type"] == "ducklake", f"Expected type 'ducklake', got {catalog['type']}"
+    assert catalog["name"] == "ducklake_db", f"Expected name 'ducklake_db', got {catalog['name']}"
     assert (
         catalog.get("metadataUri") == EXPECTED_PG_URI
     ), f"metadataUri should be '{EXPECTED_PG_URI}', got {catalog.get('metadataUri')}"
@@ -327,9 +305,7 @@ def test_pg_s3_no_password_leak(duckdb_with_ducklake_pg, marquez_client):
         if dataset is not None:
             facets_json = json.dumps(dataset.get("facets", {})).lower()
             for pattern in password_patterns:
-                assert (
-                    pattern.lower() not in facets_json
-                ), f"Password pattern '{pattern}' found in facets"
+                assert pattern.lower() not in facets_json, f"Password pattern '{pattern}' found in facets"
             return
 
     pytest.fail("Dataset ducklake_db.main.leak_test not found in any namespace")
@@ -365,9 +341,7 @@ def test_pg_s3_ctas_both_datasets(duckdb_with_ducklake_pg, marquez_client):
 
     conn.execute("CREATE TABLE ducklake_db.ctas_src (id INTEGER, val INTEGER)")
     conn.execute("INSERT INTO ducklake_db.ctas_src VALUES (1, 10), (2, 20)")
-    conn.execute(
-        "CREATE TABLE ducklake_db.ctas_dst AS SELECT id, val * 2 AS doubled FROM ducklake_db.ctas_src"
-    )
+    conn.execute("CREATE TABLE ducklake_db.ctas_dst AS SELECT id, val * 2 AS doubled FROM ducklake_db.ctas_src")
 
     src = None
     for ns in [S3_DATA_PATH, DUCKLAKE_TEST_NAMESPACE]:
@@ -411,13 +385,11 @@ def test_pg_s3_cross_storage_query(duckdb_with_ducklake_pg, marquez_client):
     conn.execute("CREATE TABLE mem_prices (id INTEGER, price DECIMAL(10,2))")
     conn.execute("INSERT INTO mem_prices VALUES (1, 9.99)")
 
-    conn.execute(
-        """
+    conn.execute("""
         SELECT i.name, p.price
         FROM ducklake_db.dl_items i
         JOIN mem_prices p ON i.id = p.id
-    """
-    )
+    """)
 
     dl_dataset = None
     dl_actual_ns = None
@@ -433,14 +405,10 @@ def test_pg_s3_cross_storage_query(duckdb_with_ducklake_pg, marquez_client):
         user_ns, "memory.main.mem_prices", ["catalog"], timeout_seconds=30
     )
 
-    assert (
-        dl_dataset is not None
-    ), f"DuckLake dataset not found.\n" + _dump_dataset_debug(
+    assert dl_dataset is not None, f"DuckLake dataset not found.\n" + _dump_dataset_debug(
         "ducklake_db.main.dl_items", [S3_DATA_PATH, user_ns]
     )
-    assert (
-        mem_dataset is not None
-    ), f"Memory dataset not found.\n" + _dump_dataset_debug(
+    assert mem_dataset is not None, f"Memory dataset not found.\n" + _dump_dataset_debug(
         "memory.main.mem_prices", [user_ns, S3_DATA_PATH]
     )
 
@@ -448,9 +416,7 @@ def test_pg_s3_cross_storage_query(duckdb_with_ducklake_pg, marquez_client):
     assert mem_dataset["facets"]["catalog"]["type"] == "memory"
 
     # DuckLake dataset should be in S3 namespace, memory dataset in user namespace
-    assert (
-        dl_actual_ns == S3_DATA_PATH
-    ), f"DuckLake dataset namespace should be '{S3_DATA_PATH}', got '{dl_actual_ns}'"
+    assert dl_actual_ns == S3_DATA_PATH, f"DuckLake dataset namespace should be '{S3_DATA_PATH}', got '{dl_actual_ns}'"
 
 
 @pytest.mark.ducklake_postgres
