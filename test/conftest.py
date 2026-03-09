@@ -62,7 +62,9 @@ def extension_path():
         if path.exists():
             return str(path)
 
-    pytest.skip(f"Extension not found. Build it first with 'make'. Tried: {[str(p) for p in possible_paths]}")
+    pytest.skip(
+        f"Extension not found. Build it first with 'make'. Tried: {[str(p) for p in possible_paths]}"
+    )
 
 
 @pytest.fixture
@@ -71,7 +73,7 @@ def duckdb_with_extension(extension_path, marquez_api_url):
     Create a DuckDB connection with the DuckLineage extension loaded and configured.
     """
     # Create a fresh in-memory database with allow_unsigned_extensions enabled
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
 
     try:
         # Load the extension
@@ -112,22 +114,26 @@ def sample_table(duckdb_with_extension):
     """Create a sample table for testing."""
     conn = duckdb_with_extension
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE test_employees (
             id INTEGER,
             name VARCHAR,
             department VARCHAR,
             salary DECIMAL(10,2)
         )
-    """)
+    """
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO test_employees VALUES
             (1, 'Alice', 'Engineering', 95000),
             (2, 'Bob', 'Sales', 75000),
             (3, 'Carol', 'Engineering', 105000),
             (4, 'Dave', 'Marketing', 65000)
-    """)
+    """
+    )
 
     return conn
 
@@ -138,7 +144,7 @@ def lineage_connection(extension_path, marquez_api_url, clean_marquez_namespace)
     Create a DuckDB connection with DuckLineage extension loaded and configured
     for a specific test namespace. Automatically handles cleanup.
     """
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
     conn.execute(f"LOAD '{extension_path}'")
     conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
     conn.execute(f"SET duck_lineage_namespace = '{clean_marquez_namespace}'")
