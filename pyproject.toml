@@ -37,6 +37,7 @@ markers = [
     "slow: Slow running tests",
     "smoke: Quick smoke tests",
     "ducklake_postgres: DuckLake tests with PostgreSQL metadata + S3 storage",
+    "demo: Demo quickstart E2E tests",
 ]
 truncation_limit_lines = 10000
 truncation_limit_chars = 90000

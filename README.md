@@ -18,6 +18,22 @@ This extension currently implements the following OpenLineage capabilities:
 
 > Note: This extension works with both direct SQL execution and PreparedStatements (used by embedded drivers like Java JDBC and Python SQLAlchemy). When a query is executed via PreparedStatement, DuckDB does not expose the original SQL string to the optimizer. In this case, the extension still captures full lineage (inputs, outputs, schemas, facets), but view reference detection is unavailable — tables accessed through views will appear as direct inputs rather than being grouped under their view. The SQL job facet is also omitted when the original query string is not available.
 
+## Try It Out
+
+The fastest way to see Duck Lineage in action is the quickstart demo. It starts Marquez, runs a sample ETL pipeline, and drops you into an interactive DuckDB session with lineage tracking enabled - all in one command:
+
+```sh
+./test/demo.sh
+```
+or
+```sh
+make demo
+```
+
+Then open http://localhost:3000 to explore the lineage graph. When you're done, stop the infrastructure with `make demo-down`.
+
+> **Prerequisites:** Docker (with Compose) and curl. The demo will auto-download DuckDB if it's not already on your PATH.
+
 ## Quick Start
 
 > Note: This extension is not yet available in the official DuckDB community extension repository. You will need to build it from source (or download from GitHub Actions artifacts).

@@ -60,6 +60,11 @@ test-help:
 	@echo "  marquez-logs     - View Marquez logs"
 	@echo "  test-clean       - Clean test artifacts"
 	@echo ""
+	@echo "Demo Targets:"
+	@echo "  demo             - Launch quickstart demo (Marquez + DuckDB + example pipeline)"
+	@echo "  demo-down        - Stop demo infrastructure"
+	@echo "  demo-clean       - Stop demo + remove downloaded DuckDB binary"
+	@echo ""
 	@echo "Quick start:"
 	@echo "  make test-setup  # First time setup"
 	@echo "  make test-all    # Run tests"
@@ -141,3 +146,16 @@ test-clean:
 	cd test && rm -rf .pytest_cache __pycache__
 	find test -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find test -type f -name "*.pyc" -delete
+
+#### Demo targets ####
+
+.PHONY: demo demo-down demo-clean
+
+demo:
+	@bash test/demo.sh
+
+demo-down:
+	@bash test/demo.sh --down
+
+demo-clean:
+	@bash test/demo.sh --down --clean
