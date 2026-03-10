@@ -27,6 +27,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DUCKDB_DIR="${SCRIPT_DIR}/.duckdb"
 DUCKDB_BIN="${DUCKDB_DIR}/duckdb"
 DEMO_DB="${SCRIPT_DIR}/.demo.duckdb"
+IS_LOCAL_BUILD=false
+EXT_PATH=""
 
 # ---------------------------------------------------------------------------
 # Colored output helpers
@@ -116,7 +118,14 @@ ensure_duckdb() {
     local build_bin="${SCRIPT_DIR}/../build/release/duckdb"
     if [[ -x "${build_bin}" ]]; then
         DUCKDB_BIN="$(cd "$(dirname "${build_bin}")" && pwd)/duckdb"
-        success "Using locally built DuckDB: ${DUCKDB_BIN}"
+        local ext_file="${SCRIPT_DIR}/../build/release/extension/duck_lineage/duck_lineage.duckdb_extension"
+        if [[ -f "${ext_file}" ]]; then
+            IS_LOCAL_BUILD=true
+            EXT_PATH="$(cd "$(dirname "${ext_file}")" && pwd)/duck_lineage.duckdb_extension"
+            success "Using locally built DuckDB: ${DUCKDB_BIN} (extension: ${EXT_PATH})"
+        else
+            success "Using locally built DuckDB: ${DUCKDB_BIN}"
+        fi
         return
     fi
 
@@ -212,7 +221,18 @@ stop_marquez() {
 run_seed() {
     info "Running ETL pipeline..."
     rm -f "${DEMO_DB}" "${DEMO_DB}.wal"
-    "${DUCKDB_BIN}" "${DEMO_DB}" < "${SCRIPT_DIR}/demo-example.sql"
+
+    if [[ "${IS_LOCAL_BUILD}" == true ]]; then
+        # Local build: load extension from build dir, strip INSTALL/LOAD from SQL
+        local tmp_sql
+        tmp_sql="$(mktemp)"
+        sed '/^INSTALL duck_lineage/d; /^LOAD duck_lineage/d' "${SCRIPT_DIR}/demo-example.sql" > "${tmp_sql}"
+        "${DUCKDB_BIN}" "${DEMO_DB}" -unsigned \
+            -cmd "LOAD '${EXT_PATH}'" < "${tmp_sql}"
+        rm -f "${tmp_sql}"
+    else
+        "${DUCKDB_BIN}" "${DEMO_DB}" < "${SCRIPT_DIR}/demo-example.sql"
+    fi
 
     info "Waiting for lineage events to land in Marquez..."
     sleep 3
@@ -226,9 +246,22 @@ open_interactive() {
     echo -e "  Type ${BOLD}.quit${NC} to exit."
     echo ""
 
-    "${DUCKDB_BIN}" "${DEMO_DB}" \
-        -cmd "INSTALL duck_lineage FROM community" \
-        -cmd "LOAD duck_lineage" \
+    local load_cmds=()
+    if [[ "${IS_LOCAL_BUILD}" == true ]]; then
+        load_cmds+=(-unsigned -cmd "LOAD '${EXT_PATH}'")
+    else
+        load_cmds+=(-cmd "INSTALL duck_lineage FROM community" -cmd "LOAD duck_lineage")
+    fi
+
+    # Use rlwrap if available — fixes input in terminals where DuckDB's
+    # built-in line editor doesn't work (e.g. VS Code integrated terminal)
+    local wrapper=()
+    if command -v rlwrap >/dev/null 2>&1; then
+        wrapper=(rlwrap)
+    fi
+
+    "${wrapper[@]}" "${DUCKDB_BIN}" "${DEMO_DB}" \
+        "${load_cmds[@]}" \
         -cmd "SET duck_lineage_url = 'http://localhost:${MARQUEZ_API_PORT}/api/v1/lineage'" \
         -cmd "SET duck_lineage_namespace = 'demo'" \
         -cmd "SET duck_lineage_debug = true"
