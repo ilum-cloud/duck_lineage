@@ -18,8 +18,9 @@ namespace duckdb {
 
 using json = nlohmann::json;
 
-// Forward declaration
+// Forward declarations
 struct CatalogInfo;
+struct ColumnLineageField;
 
 /// @class LineageEventBuilder
 /// @brief Factory class for constructing OpenLineage JSON events.
@@ -246,6 +247,15 @@ public:
 	                                                       const std::string &dataset_type,
 	                                                       const std::string &sub_type = "");
 
+	/// @brief Add columnLineage facet to an output dataset
+	/// @param dataset_namespace Dataset namespace
+	/// @param dataset_name Dataset name
+	/// @param column_lineage Vector of ColumnLineageField entries
+	/// @return Reference to this builder for chaining
+	LineageEventBuilder &AddOutputDatasetFacet_ColumnLineage(const std::string &dataset_namespace,
+	                                                         const std::string &dataset_name,
+	                                                         const std::vector<ColumnLineageField> &column_lineage);
+
 	/// @brief Add an input dataset with DataSource and Catalog facets
 	/// @param namespace_ Dataset namespace
 	/// @param name Dataset name
@@ -352,6 +362,8 @@ private:
 	    "https://openlineage.io/spec/facets/1-0-0/LifecycleStateChangeDatasetFacet.json";
 	static constexpr const char *DATASET_TYPE_FACET_SCHEMA =
 	    "https://openlineage.io/spec/facets/1-0-0/DatasetTypeDatasetFacet.json";
+	static constexpr const char *COLUMN_LINEAGE_FACET_SCHEMA =
+	    "https://openlineage.io/spec/facets/1-1-1/ColumnLineageDatasetFacet.json";
 };
 
 } // namespace duckdb
