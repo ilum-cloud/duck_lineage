@@ -27,10 +27,12 @@ def test_csv_read_lineage(lineage_connection, marquez_client, tmp_path):
     conn = lineage_connection
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
-    conn.execute(f"""
+    conn.execute(
+        f"""
         CREATE TABLE imported_data AS
         SELECT * FROM read_csv_auto('{csv_file}')
-    """)
+    """
+    )
 
     result = conn.execute("SELECT COUNT(*) FROM imported_data").fetchone()
     assert result[0] == 2
@@ -94,10 +96,12 @@ def test_parquet_read_lineage(lineage_connection, marquez_client, tmp_path):
     conn = lineage_connection
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
-    conn.execute(f"""
+    conn.execute(
+        f"""
         CREATE TABLE from_parquet AS
         SELECT * FROM read_parquet('{parquet_file}')
-    """)
+    """
+    )
 
     result = conn.execute("SELECT COUNT(*) FROM from_parquet").fetchone()
     assert result[0] == 2
@@ -125,13 +129,15 @@ def test_parquet_write_lineage(lineage_connection, marquez_client, tmp_path):
     conn = lineage_connection
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE analytics_results (
             metric_name VARCHAR,
             metric_value DOUBLE,
             timestamp TIMESTAMP
         )
-    """)
+    """
+    )
     conn.execute("INSERT INTO analytics_results VALUES ('conversion_rate', 0.125, '2024-01-01 10:00:00')")
 
     conn.execute(f"COPY analytics_results TO '{parquet_file}' (FORMAT PARQUET)")
@@ -164,7 +170,8 @@ def test_multiple_file_operations(lineage_connection, marquez_client, tmp_path):
 
     conn.execute(f"CREATE TABLE raw_data AS SELECT * FROM read_csv_auto('{input_csv}')")
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE processed_data AS
         SELECT
             category,
@@ -173,7 +180,8 @@ def test_multiple_file_operations(lineage_connection, marquez_client, tmp_path):
             AVG(amount) as avg_amount
         FROM raw_data
         GROUP BY category
-    """)
+    """
+    )
 
     conn.execute(f"COPY processed_data TO '{output_parquet}' (FORMAT PARQUET)")
 
