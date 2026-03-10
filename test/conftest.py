@@ -71,7 +71,7 @@ def duckdb_with_extension(extension_path, marquez_api_url):
     Create a DuckDB connection with the DuckLineage extension loaded and configured.
     """
     # Create a fresh in-memory database with allow_unsigned_extensions enabled
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
 
     try:
         # Load the extension
@@ -142,7 +142,7 @@ def lineage_connection(extension_path, marquez_api_url, clean_marquez_namespace)
     Create a DuckDB connection with DuckLineage extension loaded and configured
     for a specific test namespace. Automatically handles cleanup.
     """
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
     conn.execute(f"LOAD '{extension_path}'")
     conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
     conn.execute(f"SET duck_lineage_namespace = '{clean_marquez_namespace}'")

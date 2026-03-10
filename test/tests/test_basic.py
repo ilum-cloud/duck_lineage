@@ -45,13 +45,13 @@ def test_configuration_set(duckdb_with_extension):
 
     # Verify settings were persisted
     url = conn.execute("SELECT current_setting('duck_lineage_url')").fetchone()[0]
-    assert url == 'http://test.example.com/api/v1/lineage'
+    assert url == "http://test.example.com/api/v1/lineage"
 
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
-    assert namespace == 'test_namespace'
+    assert namespace == "test_namespace"
 
     debug = conn.execute("SELECT current_setting('duck_lineage_debug')").fetchone()[0]
-    assert debug in (True, 'true'), f"Expected debug=true, got {debug!r}"
+    assert debug in (True, "true"), f"Expected debug=true, got {debug!r}"
 
 
 @pytest.mark.integration
@@ -71,8 +71,8 @@ def test_simple_query(sample_table, marquez_client):
     ).fetchall()
 
     assert len(result) == 2
-    assert result[0][0] == 'Alice'
-    assert result[1][0] == 'Carol'
+    assert result[0][0] == "Alice"
+    assert result[1][0] == "Carol"
 
     # ── Validate the dataset object in Marquez ──
     dataset = marquez_client.wait_for_dataset_with_fields("duckdb_test", "memory.main.test_employees")
