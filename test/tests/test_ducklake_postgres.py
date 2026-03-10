@@ -21,7 +21,6 @@ import duckdb
 import pytest
 import requests
 
-
 DUCKLAKE_PG_HOST = "localhost"
 DUCKLAKE_PG_PORT = 5433
 DUCKLAKE_PG_USER = "ducklake"
@@ -374,13 +373,11 @@ def test_pg_s3_cross_storage_query(duckdb_with_ducklake_pg, marquez_client):
     conn.execute("CREATE TABLE mem_prices (id INTEGER, price DECIMAL(10,2))")
     conn.execute("INSERT INTO mem_prices VALUES (1, 9.99)")
 
-    conn.execute(
-        """
+    conn.execute("""
         SELECT i.name, p.price
         FROM ducklake_db.dl_items i
         JOIN mem_prices p ON i.id = p.id
-    """
-    )
+    """)
 
     dl_dataset = None
     dl_actual_ns = None

@@ -18,6 +18,12 @@
 #include "duckdb/planner/operator/logical_aggregate.hpp"
 #include "duckdb/planner/operator/logical_set_operation.hpp"
 #include "duckdb/planner/operator/logical_window.hpp"
+#include "duckdb/planner/operator/logical_pivot.hpp"
+#include "duckdb/planner/operator/logical_unnest.hpp"
+#include "duckdb/planner/tableref/bound_pivotref.hpp"
+#include "duckdb/planner/expression/bound_unnest_expression.hpp"
+#include "duckdb/common/multi_file/multi_file_states.hpp"
+#include "duckdb/common/multi_file/multi_file_list.hpp"
 #include "duckdb/planner/expression/bound_columnref_expression.hpp"
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
@@ -130,6 +136,36 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 		}
 		break;
 	}
+	case LogicalOperatorType::LOGICAL_PIVOT: {
+		auto &pivot = op.Cast<LogicalPivot>();
+		// Group columns from child
+		if (!op.children.empty()) {
+			auto child_names = GetOperatorColumnNames(*op.children[0]);
+			for (idx_t i = 0; i < pivot.bound_pivot.group_count && i < child_names.size(); i++) {
+				names.push_back(child_names[i]);
+			}
+		}
+		// Pivoted columns: value_aggname pattern
+		for (auto &val : pivot.bound_pivot.pivot_values) {
+			for (auto &agg : pivot.bound_pivot.aggregates) {
+				names.push_back(val + "_" + agg->GetName());
+			}
+		}
+		// Pad if needed
+		while (names.size() < pivot.bound_pivot.types.size()) {
+			names.push_back("col" + to_string(names.size()));
+		}
+		break;
+	}
+	case LogicalOperatorType::LOGICAL_UNNEST: {
+		if (!op.children.empty()) {
+			names = GetOperatorColumnNames(*op.children[0]);
+		}
+		for (auto &expr : op.expressions) {
+			names.push_back(expr->GetName());
+		}
+		break;
+	}
 	case LogicalOperatorType::LOGICAL_UNION:
 	case LogicalOperatorType::LOGICAL_INTERSECT:
 	case LogicalOperatorType::LOGICAL_EXCEPT: {
@@ -145,9 +181,34 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 		break;
 	}
 	default: {
-		// Fallback: use type names or generic names
-		for (idx_t i = 0; i < op.types.size(); i++) {
-			names.push_back("col" + to_string(i));
+		// Fallback: for passthrough operators (filter, order, limit, distinct, etc.),
+		// delegate to the child operator to get proper column names.
+		// Use GetColumnBindings().size() for output width since op.types may not
+		// be resolved yet (we run in the optimizer hook before full type resolution).
+		auto output_width = op.GetColumnBindings().size();
+		if (output_width == 0) {
+			output_width = op.types.size();
+		}
+
+		if (!op.children.empty()) {
+			// For LOGICAL_MATERIALIZED_CTE, children[1] is the main query (output),
+			// children[0] is the CTE definition. Use children[1] for column names.
+			idx_t name_child = 0;
+			if (op.type == LogicalOperatorType::LOGICAL_MATERIALIZED_CTE && op.children.size() > 1) {
+				name_child = 1;
+			}
+			names = GetOperatorColumnNames(*op.children[name_child]);
+			// Trim or pad to match this operator's output width
+			while (names.size() > output_width && output_width > 0) {
+				names.pop_back();
+			}
+			while (names.size() < output_width) {
+				names.push_back("col" + to_string(names.size()));
+			}
+		} else {
+			for (idx_t i = 0; i < output_width; i++) {
+				names.push_back("col" + to_string(i));
+			}
 		}
 		break;
 	}
@@ -232,6 +293,12 @@ void ColumnLineageExtractor::TraversePlan(LogicalOperator &op) {
 	case LogicalOperatorType::LOGICAL_WINDOW:
 		HandleWindow(op);
 		break;
+	case LogicalOperatorType::LOGICAL_PIVOT:
+		HandlePivot(op);
+		break;
+	case LogicalOperatorType::LOGICAL_UNNEST:
+		HandleUnnest(op);
+		break;
 	default:
 		HandleDefaultPassthrough(op);
 		break;
@@ -245,73 +312,94 @@ void ColumnLineageExtractor::TraversePlan(LogicalOperator &op) {
 void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 	auto &get = op.Cast<LogicalGet>();
 
-	// Only handle table scans with a real table
-	if (!get.GetTable()) {
-		return;
-	}
-
 	// Skip views - their underlying tables will be in the plan
-	if (get.GetTable()->type == CatalogType::VIEW_ENTRY) {
+	if (get.GetTable() && get.GetTable()->type == CatalogType::VIEW_ENTRY) {
 		return;
 	}
 
-	// Resolve the namespace and fully qualified name
 	string dataset_ns;
-	try {
-		string data_path = "";
+	string dataset_name;
+	vector<string> column_names;
+
+	if (get.GetTable()) {
+		// Table scan: resolve namespace and fully qualified name from catalog
 		try {
-			auto &catalog = get.GetTable()->catalog;
-			if (!catalog.IsSystemCatalog() && !catalog.IsTemporaryCatalog()) {
-				auto &attached_db = catalog.GetAttached();
-				if (attached_db.tags.contains("data_path")) {
-					data_path = attached_db.tags["data_path"];
-					if (!data_path.empty() && data_path.back() == '/') {
-						data_path.pop_back();
+			string data_path = "";
+			try {
+				auto &catalog = get.GetTable()->catalog;
+				if (!catalog.IsSystemCatalog() && !catalog.IsTemporaryCatalog()) {
+					auto &attached_db = catalog.GetAttached();
+					if (attached_db.tags.contains("data_path")) {
+						data_path = attached_db.tags["data_path"];
+						if (!data_path.empty() && data_path.back() == '/') {
+							data_path.pop_back();
+						}
 					}
 				}
+			} catch (...) {
+			}
+
+			if (!data_path.empty()) {
+				dataset_ns = data_path;
+			} else {
+				dataset_ns = LineageClient::Get().GetNamespace();
 			}
 		} catch (...) {
-		}
-
-		if (!data_path.empty()) {
-			dataset_ns = data_path;
-		} else {
 			dataset_ns = LineageClient::Get().GetNamespace();
 		}
-	} catch (...) {
-		dataset_ns = LineageClient::Get().GetNamespace();
-	}
 
-	string fully_qualified_name;
-	try {
-		fully_qualified_name =
-		    GetFullyQualifiedTableName(get.GetTable()->catalog, get.GetTable()->ParentSchema(), get.GetTable()->name);
-	} catch (...) {
-		fully_qualified_name = get.GetTable()->name;
+		try {
+			dataset_name = GetFullyQualifiedTableName(get.GetTable()->catalog, get.GetTable()->ParentSchema(),
+			                                          get.GetTable()->name);
+		} catch (...) {
+			dataset_name = get.GetTable()->name;
+		}
+
+		// Get the table columns for name lookup
+		auto &table_columns = get.GetTable()->GetColumns();
+		for (auto &col : table_columns.Logical()) {
+			column_names.push_back(col.Name());
+		}
+	} else {
+		// File scan (read_csv, read_parquet, etc.) or table function
+		dataset_ns = "file";
+
+		// Try to extract file path from MultiFileBindData (same pattern as optimizer)
+		if (get.bind_data) {
+			try {
+				auto *multi_file_data = dynamic_cast<MultiFileBindData *>(get.bind_data.get());
+				if (multi_file_data && multi_file_data->file_list) {
+					auto file_paths = multi_file_data->file_list->GetPaths();
+					if (!file_paths.empty()) {
+						dataset_name = file_paths[0].path;
+					}
+				}
+			} catch (...) {
+			}
+		}
+		if (dataset_name.empty()) {
+			dataset_name = get.function.name;
+		}
+
+		// Use get.names for column name lookup
+		column_names = get.names;
 	}
 
 	// Map each column binding to its source
 	auto &column_ids = get.GetColumnIds();
 	auto bindings = get.GetColumnBindings();
 
-	// Get the table columns for name lookup
-	auto &table_columns = get.GetTable()->GetColumns();
-	vector<string> column_names;
-	for (auto &col : table_columns.Logical()) {
-		column_names.push_back(col.Name());
-	}
-
 	for (idx_t i = 0; i < bindings.size(); i++) {
 		if (i >= column_ids.size()) {
 			break;
 		}
 
-		auto col_idx = column_ids[i].GetPrimaryIndex();
-
 		// Skip row ID and virtual columns
 		if (column_ids[i].IsRowIdColumn() || column_ids[i].IsVirtualColumn()) {
 			continue;
 		}
+
+		auto col_idx = column_ids[i].GetPrimaryIndex();
 
 		// Get the column name
 		string col_name;
@@ -323,7 +411,7 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 
 		SourceColumn src;
 		src.dataset_namespace = dataset_ns;
-		src.dataset_name = fully_qualified_name;
+		src.dataset_name = dataset_name;
 		src.column_name = col_name;
 
 		BindingLineage lineage;
@@ -543,6 +631,79 @@ void ColumnLineageExtractor::HandleWindow(LogicalOperator &op) {
 	}
 }
 
+void ColumnLineageExtractor::HandlePivot(LogicalOperator &op) {
+	auto &pivot = op.Cast<LogicalPivot>();
+	auto my_bindings = pivot.GetColumnBindings();
+
+	if (op.children.empty()) {
+		return;
+	}
+	auto child_bindings = op.children[0]->GetColumnBindings();
+
+	idx_t group_count = pivot.bound_pivot.group_count;
+
+	for (idx_t i = 0; i < my_bindings.size(); i++) {
+		if (i < group_count) {
+			// Group columns: pass through from child (1:1 positional)
+			if (i < child_bindings.size()) {
+				auto child_key = PackBinding(child_bindings[i]);
+				auto it = lineage_map.find(child_key);
+				if (it != lineage_map.end()) {
+					lineage_map[PackBinding(my_bindings[i])] = it->second;
+				}
+			}
+		} else {
+			// Pivoted aggregate columns: resolve aggregate expression
+			idx_t pivot_col = i - group_count;
+			idx_t agg_count = pivot.bound_pivot.aggregates.size();
+			if (agg_count > 0) {
+				idx_t agg_idx = pivot_col % agg_count;
+				if (agg_idx < pivot.bound_pivot.aggregates.size()) {
+					auto resolved = ResolveExpression(*pivot.bound_pivot.aggregates[agg_idx]);
+					DeduplicateSources(resolved);
+					resolved.is_direct = false; // aggregation is always indirect
+					if (!resolved.sources.empty()) {
+						lineage_map[PackBinding(my_bindings[i])] = std::move(resolved);
+					}
+				}
+			}
+		}
+	}
+}
+
+void ColumnLineageExtractor::HandleUnnest(LogicalOperator &op) {
+	auto &unnest = op.Cast<LogicalUnnest>();
+	(void)unnest; // Used for Cast validation
+
+	if (op.children.empty()) {
+		return;
+	}
+	auto child_bindings = op.children[0]->GetColumnBindings();
+	auto my_bindings = op.GetColumnBindings();
+
+	// First N bindings: pass-through from child
+	for (idx_t i = 0; i < child_bindings.size() && i < my_bindings.size(); i++) {
+		auto child_key = PackBinding(child_bindings[i]);
+		auto it = lineage_map.find(child_key);
+		if (it != lineage_map.end()) {
+			lineage_map[PackBinding(my_bindings[i])] = it->second;
+		}
+	}
+
+	// Remaining bindings: unnest expressions
+	for (idx_t i = child_bindings.size(); i < my_bindings.size(); i++) {
+		idx_t expr_idx = i - child_bindings.size();
+		if (expr_idx < op.expressions.size()) {
+			auto resolved = ResolveExpression(*op.expressions[expr_idx]);
+			DeduplicateSources(resolved);
+			resolved.is_direct = false; // unnesting transforms the structure
+			if (!resolved.sources.empty()) {
+				lineage_map[PackBinding(my_bindings[i])] = std::move(resolved);
+			}
+		}
+	}
+}
+
 void ColumnLineageExtractor::HandleDefaultPassthrough(LogicalOperator &op) {
 	// Default: pass through child bindings unchanged
 	if (op.children.empty()) {
@@ -656,6 +817,12 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 				result.sources.push_back(src);
 			}
 		}
+		break;
+	}
+	case ExpressionClass::BOUND_UNNEST: {
+		auto &unnest_expr = expr.Cast<BoundUnnestExpression>();
+		result = ResolveExpression(*unnest_expr.child);
+		result.is_direct = false;
 		break;
 	}
 	case ExpressionClass::BOUND_CONSTANT: {
