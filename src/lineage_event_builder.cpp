@@ -668,6 +668,22 @@ json LineageEventBuilder::CreateSchemaField(const std::string &field_name, const
 }
 
 //===--------------------------------------------------------------------===//
+// Accessors
+//===--------------------------------------------------------------------===//
+
+std::vector<LineageEventBuilder::DatasetRef> LineageEventBuilder::GetOutputDatasets() const {
+	std::vector<DatasetRef> result;
+	if (event_json.contains("outputs") && event_json["outputs"].is_array()) {
+		for (const auto &output : event_json["outputs"]) {
+			if (output.contains("namespace") && output.contains("name")) {
+				result.push_back({output["namespace"].get<std::string>(), output["name"].get<std::string>()});
+			}
+		}
+	}
+	return result;
+}
+
+//===--------------------------------------------------------------------===//
 // Build
 //===--------------------------------------------------------------------===//
 

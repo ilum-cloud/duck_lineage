@@ -106,7 +106,9 @@ def test_baseline_select_1(plain_conn, lineage_conn):
     plain_ms = _measure(plain_conn, q)
     lineage_ms = _measure(lineage_conn, q)
     overhead = _report("SELECT 1", plain_ms, lineage_ms)
+    ratio = lineage_ms / plain_ms if plain_ms > 0 else float("inf")
     assert overhead < SIMPLE_THRESHOLD_MS, f"Baseline overhead {overhead:.1f}ms exceeds {SIMPLE_THRESHOLD_MS}ms"
+    assert ratio < 1.8, f"Baseline ratio {ratio:.2f}x exceeds 1.8x"
 
 
 @pytest.mark.slow

@@ -14,15 +14,15 @@
 #include <openssl/evp.h>
 #include <string>
 #include <string_view>
-#include <sstream>
-#include <iomanip>
 #include <random>
 #include <algorithm>
 #include <cctype>
 #include <vector>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <unordered_map>
+#include <unordered_set>
 
 namespace duckdb {
 
@@ -73,12 +73,11 @@ static std::string CalculateSHA256(const std::string &str) {
 
 	EVP_MD_CTX_free(mdctx);
 
-	std::stringstream ss;
-	ss << std::hex << std::setfill('0');
+	std::string result(hash_len * 2, '\0');
 	for (unsigned int i = 0; i < hash_len; i++) {
-		ss << std::setw(2) << static_cast<unsigned int>(hash[i]);
+		snprintf(&result[i * 2], 3, "%02x", hash[i]);
 	}
-	return ss.str();
+	return result;
 }
 
 /// @brief Generate a random UUID version 7 (RFC 9562).
@@ -120,21 +119,13 @@ static std::string GenerateUUID() {
 	// Last 48 bits: random
 	uint64_t rand_final = dis64(gen) & 0xFFFFFFFFFFFF;
 
-	std::stringstream ss;
-	ss << std::hex << std::setfill('0');
-
 	// Format: xxxxxxxx-xxxx-7xxx-yxxx-xxxxxxxxxxxx
-	ss << std::setw(8) << time_hi;
-	ss << "-";
-	ss << std::setw(4) << time_lo;
-	ss << "-";
-	ss << std::setw(4) << rand_and_version;
-	ss << "-";
-	ss << std::setw(4) << variant_and_rand;
-	ss << "-";
-	ss << std::setw(12) << rand_final;
-
-	return ss.str();
+	char buf[37]; // 36 chars + null
+	snprintf(buf, sizeof(buf), "%08x-%04x-%04x-%04x-%012llx",
+	         static_cast<unsigned>(time_hi), static_cast<unsigned>(time_lo),
+	         static_cast<unsigned>(rand_and_version), static_cast<unsigned>(variant_and_rand),
+	         static_cast<unsigned long long>(rand_final));
+	return std::string(buf);
 }
 
 /// @brief Get the current timestamp in ISO 8601 format with UTC timezone.
@@ -242,27 +233,34 @@ std::string GetFullyQualifiedTableName(Catalog &catalog, SchemaCatalogEntry &sch
 /// @note Replaces spaces and other characters with underscores, removes consecutive underscores.
 std::string SanitizeJobNamePart(const std::string &str);
 
-/// @brief Infer the statement type from a logical plan's root operator.
-/// @param plan The logical operator plan to analyze.
-/// @return String representing the statement type (e.g., "SELECT", "INSERT", "CREATE_TABLE").
-/// @note Examines the plan structure to determine the primary operation type.
-std::string InferStatementType(const LogicalOperator &plan);
+/// @brief Result of a single-pass plan analysis.
+/// Collects all operator types, counts, and table names in one traversal.
+struct PlanAnalysis {
+	LogicalOperatorType root_type;
+	std::vector<LogicalOperatorType> child_types;                       // direct children types
+	std::unordered_set<LogicalOperatorType> all_operator_types;         // all types in the plan
+	std::unordered_map<LogicalOperatorType, size_t> operator_counts;    // counts per type
+	std::vector<std::string> table_names;                               // up to max_tables
+	size_t max_tables = 3;
+};
 
-/// @brief Extract table names from a logical plan by traversing the operator tree.
+/// @brief Analyze a logical plan in a single pass, collecting operator types, counts, and table names.
 /// @param plan The logical operator plan to analyze.
-/// @param table_names Output vector to collect table names.
 /// @param max_tables Maximum number of table names to collect (default: 3).
-/// @note Recursively visits the plan to find table references from GET, INSERT, CREATE operations.
-void ExtractTableNames(const LogicalOperator &plan, std::vector<std::string> &table_names, size_t max_tables = 3);
+/// @return PlanAnalysis with all collected information.
+PlanAnalysis AnalyzePlan(const LogicalOperator &plan, size_t max_tables = 3);
 
-/// @brief Generate a readable job name from a logical plan.
-/// @param plan The logical operator plan to analyze.
+/// @brief Infer the statement type from a pre-computed plan analysis.
+/// @param analysis The plan analysis result from AnalyzePlan.
+/// @return String representing the statement type (e.g., "SELECT", "INSERT", "CREATE_TABLE").
+std::string InferStatementType(const PlanAnalysis &analysis);
+
+/// @brief Generate a readable job name from a pre-computed plan analysis.
+/// @param analysis The plan analysis result from AnalyzePlan.
 /// @param query The SQL query text (used as fallback for hash component).
 /// @param max_length Maximum length of the generated job name (default: 64).
 /// @return Human-readable job name in format: STATEMENT_TYPE_table1_table2[_hash]
-/// @note Combines statement type, table names, and optionally a short hash for uniqueness.
-/// @example "SELECT_customers_orders", "INSERT_sales", "CREATE_TABLE_users"
-std::string GenerateJobName(const LogicalOperator &plan, const std::string &query, size_t max_length = 64);
+std::string GenerateJobName(const PlanAnalysis &analysis, const std::string &query, size_t max_length = 64);
 
 /// @brief Extract catalog information from a DuckDB catalog for OpenLineage catalog facet.
 /// @param catalog The DuckDB catalog to extract information from.

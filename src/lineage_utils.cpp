@@ -59,38 +59,58 @@ std::string SanitizeJobNamePart(const std::string &str) {
 	return result;
 }
 
-// Helper functions to analyze operator types in a plan
-static bool ContainsOperatorType(const LogicalOperator &plan, LogicalOperatorType target_type) {
-	if (plan.type == target_type) {
-		return true;
-	}
-	for (const auto &child : plan.children) {
-		if (ContainsOperatorType(*child, target_type)) {
-			return true;
+// Single-pass plan traversal helper
+static void AnalyzePlanRecursive(const LogicalOperator &plan, PlanAnalysis &result) {
+	// Record operator type and count
+	result.all_operator_types.insert(plan.type);
+	result.operator_counts[plan.type]++;
+
+	// Extract table names (up to max)
+	if (result.table_names.size() < result.max_tables) {
+		if (plan.type == LogicalOperatorType::LOGICAL_GET) {
+			auto &get = plan.Cast<LogicalGet>();
+			if (get.GetTable()) {
+				result.table_names.push_back(get.GetTable()->name);
+			}
+		} else if (plan.type == LogicalOperatorType::LOGICAL_INSERT) {
+			auto &insert = plan.Cast<LogicalInsert>();
+			result.table_names.push_back(insert.table.name);
+		} else if (plan.type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
+			auto &create = plan.Cast<LogicalCreateTable>();
+			if (create.info) {
+				result.table_names.push_back(create.info->Base().table);
+			}
+		} else if (plan.type == LogicalOperatorType::LOGICAL_DELETE) {
+			auto &del = plan.Cast<LogicalDelete>();
+			result.table_names.push_back(del.table.name);
+		} else if (plan.type == LogicalOperatorType::LOGICAL_UPDATE) {
+			auto &update = plan.Cast<LogicalUpdate>();
+			result.table_names.push_back(update.table.name);
 		}
 	}
-	return false;
-}
 
-// Check if any of multiple operator types exist in the plan
-static bool ContainsAnyOperatorType(const LogicalOperator &plan, const std::vector<LogicalOperatorType> &types) {
-	for (auto type : types) {
-		if (ContainsOperatorType(plan, type)) {
-			return true;
-		}
-	}
-	return false;
-}
-
-static size_t CountOperatorType(const LogicalOperator &plan, LogicalOperatorType target_type) {
-	size_t count = (plan.type == target_type) ? 1 : 0;
+	// Recurse into children
 	for (const auto &child : plan.children) {
-		count += CountOperatorType(*child, target_type);
+		AnalyzePlanRecursive(*child, result);
 	}
-	return count;
 }
 
-std::string InferStatementType(const LogicalOperator &plan) {
+PlanAnalysis AnalyzePlan(const LogicalOperator &plan, size_t max_tables) {
+	PlanAnalysis result;
+	result.root_type = plan.type;
+	result.max_tables = max_tables;
+
+	// Collect direct children types (for CREATE TABLE AS SELECT detection)
+	for (const auto &child : plan.children) {
+		result.child_types.push_back(child->type);
+	}
+
+	// Single recursive traversal
+	AnalyzePlanRecursive(plan, result);
+	return result;
+}
+
+std::string InferStatementType(const PlanAnalysis &analysis) {
 	// Lookup table for DML/DDL operator types
 	static const unordered_map<LogicalOperatorType, string> operator_type_names = {
 	    {LogicalOperatorType::LOGICAL_INSERT, "INSERT"},
@@ -113,35 +133,37 @@ std::string InferStatementType(const LogicalOperator &plan) {
 	    {LogicalOperatorType::LOGICAL_DETACH, "DETACH"},
 	    {LogicalOperatorType::LOGICAL_EXPORT, "EXPORT"}};
 
-	// Check if it's a DML/DDL operation
-	auto it = operator_type_names.find(plan.type);
+	// Check if root is a DML/DDL operation
+	auto it = operator_type_names.find(analysis.root_type);
 	if (it != operator_type_names.end()) {
 		return it->second;
 	}
 
-	// For SELECT queries, analyze the plan structure to determine the type
-
-	// Check for write operations in children (e.g., CREATE TABLE AS SELECT)
-	for (const auto &child : plan.children) {
-		if (child->type == LogicalOperatorType::LOGICAL_INSERT ||
-		    child->type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
-			return InferStatementType(*child);
+	// Check for write operations in direct children (e.g., CREATE TABLE AS SELECT)
+	for (auto child_type : analysis.child_types) {
+		auto child_it = operator_type_names.find(child_type);
+		if (child_it != operator_type_names.end() &&
+		    (child_type == LogicalOperatorType::LOGICAL_INSERT ||
+		     child_type == LogicalOperatorType::LOGICAL_CREATE_TABLE)) {
+			return child_it->second;
 		}
 	}
 
-	// Analyze SELECT query characteristics
-	const auto join_types = {LogicalOperatorType::LOGICAL_JOIN, LogicalOperatorType::LOGICAL_COMPARISON_JOIN,
-	                         LogicalOperatorType::LOGICAL_CROSS_PRODUCT, LogicalOperatorType::LOGICAL_ASOF_JOIN};
+	// Analyze SELECT query characteristics using pre-collected sets
+	const auto &types = analysis.all_operator_types;
 
-	bool has_aggregate = ContainsOperatorType(plan, LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY);
-	bool has_join = ContainsAnyOperatorType(plan, join_types);
-	bool has_window = ContainsOperatorType(plan, LogicalOperatorType::LOGICAL_WINDOW);
-	bool has_cte = ContainsAnyOperatorType(
-	    plan, {LogicalOperatorType::LOGICAL_MATERIALIZED_CTE, LogicalOperatorType::LOGICAL_RECURSIVE_CTE});
-	bool has_union = ContainsOperatorType(plan, LogicalOperatorType::LOGICAL_UNION);
-	bool has_except = ContainsOperatorType(plan, LogicalOperatorType::LOGICAL_EXCEPT);
-	bool has_intersect = ContainsOperatorType(plan, LogicalOperatorType::LOGICAL_INTERSECT);
-	bool has_distinct = ContainsOperatorType(plan, LogicalOperatorType::LOGICAL_DISTINCT);
+	bool has_aggregate = types.count(LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY) > 0;
+	bool has_join = types.count(LogicalOperatorType::LOGICAL_JOIN) > 0 ||
+	                types.count(LogicalOperatorType::LOGICAL_COMPARISON_JOIN) > 0 ||
+	                types.count(LogicalOperatorType::LOGICAL_CROSS_PRODUCT) > 0 ||
+	                types.count(LogicalOperatorType::LOGICAL_ASOF_JOIN) > 0;
+	bool has_window = types.count(LogicalOperatorType::LOGICAL_WINDOW) > 0;
+	bool has_cte = types.count(LogicalOperatorType::LOGICAL_MATERIALIZED_CTE) > 0 ||
+	               types.count(LogicalOperatorType::LOGICAL_RECURSIVE_CTE) > 0;
+	bool has_union = types.count(LogicalOperatorType::LOGICAL_UNION) > 0;
+	bool has_except = types.count(LogicalOperatorType::LOGICAL_EXCEPT) > 0;
+	bool has_intersect = types.count(LogicalOperatorType::LOGICAL_INTERSECT) > 0;
+	bool has_distinct = types.count(LogicalOperatorType::LOGICAL_DISTINCT) > 0;
 
 	// Build a more specific query type
 	std::string query_type = "SELECT";
@@ -161,8 +183,15 @@ std::string InferStatementType(const LogicalOperator &plan) {
 	} else if (has_aggregate) {
 		query_type = "SELECT_AGG";
 	} else if (has_join) {
-		size_t join_count = CountOperatorType(plan, LogicalOperatorType::LOGICAL_JOIN) +
-		                    CountOperatorType(plan, LogicalOperatorType::LOGICAL_COMPARISON_JOIN);
+		size_t join_count = 0;
+		auto jit = analysis.operator_counts.find(LogicalOperatorType::LOGICAL_JOIN);
+		if (jit != analysis.operator_counts.end()) {
+			join_count += jit->second;
+		}
+		auto cjit = analysis.operator_counts.find(LogicalOperatorType::LOGICAL_COMPARISON_JOIN);
+		if (cjit != analysis.operator_counts.end()) {
+			join_count += cjit->second;
+		}
 		query_type = (join_count > 1) ? "SELECT_MULTIJOIN" : "SELECT_JOIN";
 	} else if (has_window) {
 		query_type = "SELECT_WINDOW";
@@ -173,49 +202,9 @@ std::string InferStatementType(const LogicalOperator &plan) {
 	return query_type;
 }
 
-void ExtractTableNames(const LogicalOperator &plan, std::vector<std::string> &table_names, size_t max_tables) {
-	if (table_names.size() >= max_tables) {
-		return;
-	}
-
-	// Extract table name based on operator type
-	if (plan.type == LogicalOperatorType::LOGICAL_GET) {
-		auto &get = plan.Cast<LogicalGet>();
-		if (get.GetTable()) {
-			table_names.push_back(get.GetTable()->name);
-		}
-	} else if (plan.type == LogicalOperatorType::LOGICAL_INSERT) {
-		auto &insert = plan.Cast<LogicalInsert>();
-		table_names.push_back(insert.table.name);
-	} else if (plan.type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
-		auto &create = plan.Cast<LogicalCreateTable>();
-		if (create.info) {
-			table_names.push_back(create.info->Base().table);
-		}
-	} else if (plan.type == LogicalOperatorType::LOGICAL_DELETE) {
-		auto &del = plan.Cast<LogicalDelete>();
-		table_names.push_back(del.table.name);
-	} else if (plan.type == LogicalOperatorType::LOGICAL_UPDATE) {
-		auto &update = plan.Cast<LogicalUpdate>();
-		table_names.push_back(update.table.name);
-	}
-
-	// Recursively process children
-	for (const auto &child : plan.children) {
-		if (table_names.size() >= max_tables) {
-			break;
-		}
-		ExtractTableNames(*child, table_names, max_tables);
-	}
-}
-
-std::string GenerateJobName(const LogicalOperator &plan, const std::string &query, size_t max_length) {
-	// Get statement type
-	std::string stmt_type = InferStatementType(plan);
-
-	// Extract table names
-	std::vector<std::string> table_names;
-	ExtractTableNames(plan, table_names, 3);
+std::string GenerateJobName(const PlanAnalysis &analysis, const std::string &query, size_t max_length) {
+	// Get statement type from pre-computed analysis
+	std::string stmt_type = InferStatementType(analysis);
 
 	// Calculate hash of the query for uniqueness (always include this)
 	// This ensures that only identical queries get merged into the same job entity
@@ -227,7 +216,7 @@ std::string GenerateJobName(const LogicalOperator &plan, const std::string &quer
 
 	// Add table names if available (but reserve space for hash)
 	size_t max_prefix_length = max_length - 9; // Reserve 9 chars for "_" + 8-char hash
-	for (const auto &table : table_names) {
+	for (const auto &table : analysis.table_names) {
 		std::string sanitized = SanitizeJobNamePart(table);
 		if (!sanitized.empty()) {
 			std::string tentative_name = job_name + "_" + sanitized;
