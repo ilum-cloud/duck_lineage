@@ -108,3 +108,22 @@ def test_simple_query(sample_table, marquez_client):
     assert_job_has_io(job, expected_output_contains="test_employees")
     assert_job_run_completed(job)
     assert_job_has_sql_facet(job, "test_employees")
+
+
+@pytest.mark.integration
+def test_set_statements_no_lineage(lineage_connection, marquez_client, clean_marquez_namespace):
+    """SET/RESET/PRAGMA statements should not produce lineage events."""
+    conn = lineage_connection
+
+    # Execute utility statements that should be skipped
+    conn.execute("SET duck_lineage_debug = true")
+    conn.execute("SET duck_lineage_debug = false")
+    conn.execute("RESET duck_lineage_debug")
+
+    # Give async delivery time to flush
+    sleep(2)
+
+    # No jobs should exist in this clean namespace
+    jobs = marquez_client.list_jobs(clean_marquez_namespace)
+    set_jobs = [j for j in jobs if "SET" in (j.get("name") or "").upper() or "SELECT" in (j.get("name") or "").upper()]
+    assert not set_jobs, f"Utility statements should not create jobs, but found: {[j.get('name') for j in set_jobs]}"
