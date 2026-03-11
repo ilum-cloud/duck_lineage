@@ -472,9 +472,7 @@ def assert_transformation_type(col_lineage_facet, output_col, expected_type):
     fields_lower = {k.lower(): v for k, v in fields.items()}
 
     field_entry = fields_lower.get(output_col.lower())
-    assert field_entry, (
-        f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
-    )
+    assert field_entry, f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
 
     actual_type = field_entry.get("transformationType")
     assert actual_type == expected_type, (
@@ -491,9 +489,7 @@ def assert_field_input_count(col_lineage_facet, output_col, expected_count):
     fields_lower = {k.lower(): v for k, v in fields.items()}
 
     field_entry = fields_lower.get(output_col.lower())
-    assert field_entry, (
-        f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
-    )
+    assert field_entry, f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
 
     input_fields = field_entry.get("inputFields") or []
     assert len(input_fields) == expected_count, (

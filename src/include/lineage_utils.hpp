@@ -121,10 +121,9 @@ static std::string GenerateUUID() {
 
 	// Format: xxxxxxxx-xxxx-7xxx-yxxx-xxxxxxxxxxxx
 	char buf[37]; // 36 chars + null
-	snprintf(buf, sizeof(buf), "%08x-%04x-%04x-%04x-%012llx",
-	         static_cast<unsigned>(time_hi), static_cast<unsigned>(time_lo),
-	         static_cast<unsigned>(rand_and_version), static_cast<unsigned>(variant_and_rand),
-	         static_cast<unsigned long long>(rand_final));
+	snprintf(buf, sizeof(buf), "%08x-%04x-%04x-%04x-%012llx", static_cast<unsigned>(time_hi),
+	         static_cast<unsigned>(time_lo), static_cast<unsigned>(rand_and_version),
+	         static_cast<unsigned>(variant_and_rand), static_cast<unsigned long long>(rand_final));
 	return std::string(buf);
 }
 
@@ -237,10 +236,10 @@ std::string SanitizeJobNamePart(const std::string &str);
 /// Collects all operator types, counts, and table names in one traversal.
 struct PlanAnalysis {
 	LogicalOperatorType root_type;
-	std::vector<LogicalOperatorType> child_types;                       // direct children types
-	std::unordered_set<LogicalOperatorType> all_operator_types;         // all types in the plan
-	std::unordered_map<LogicalOperatorType, size_t> operator_counts;    // counts per type
-	std::vector<std::string> table_names;                               // up to max_tables
+	std::vector<LogicalOperatorType> child_types;                    // direct children types
+	std::unordered_set<LogicalOperatorType> all_operator_types;      // all types in the plan
+	std::unordered_map<LogicalOperatorType, size_t> operator_counts; // counts per type
+	std::vector<std::string> table_names;                            // up to max_tables
 	size_t max_tables = 3;
 };
 

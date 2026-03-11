@@ -1508,7 +1508,8 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// cannot contain view references, so skip the full SQL re-parse for them.
 	// Case-insensitive search for FROM/JOIN keywords
 	auto contains_ci = [](const string &haystack, const char *needle, size_t needle_len) {
-		if (haystack.size() < needle_len) return false;
+		if (haystack.size() < needle_len)
+			return false;
 		for (size_t i = 0; i <= haystack.size() - needle_len; i++) {
 			bool match = true;
 			for (size_t j = 0; j < needle_len; j++) {
@@ -1517,12 +1518,13 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 					break;
 				}
 			}
-			if (match) return true;
+			if (match)
+				return true;
 		}
 		return false;
 	};
-	bool might_have_views = has_original_query && query.size() > 20 &&
-	                        (contains_ci(query, "from", 4) || contains_ci(query, "join", 4));
+	bool might_have_views =
+	    has_original_query && query.size() > 20 && (contains_ci(query, "from", 4) || contains_ci(query, "join", 4));
 
 	if (might_have_views) {
 		Parser parser;
