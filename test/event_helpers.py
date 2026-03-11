@@ -10,7 +10,7 @@ from time import sleep
 
 # ── Constants matching C++ lineage_event_builder.hpp:331-354 ───────────
 
-PRODUCER = "https://github.com/Ilum/duckdb-openlineage"
+PRODUCER = "https://github.com/ilum-cloud/duck_lineage"
 SCHEMA_URL = "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent"
 
 FACET_SCHEMAS = {
@@ -129,9 +129,9 @@ def assert_valid_output(output, expected_namespace, expected_name_contains=None)
             expected_name_contains.lower() in name.lower()
         ), f"Output name {name!r} should contain {expected_name_contains!r}"
 
-    # Validate all facets on this output
+    # Validate facets produced by our extension (skip Marquez-added facets)
     for facet_name, facet in get_facets(output).items():
-        if isinstance(facet, dict) and "_producer" in facet:
+        if isinstance(facet, dict) and facet.get("_producer") == PRODUCER:
             assert_valid_facet(facet, facet_name)
 
 
@@ -261,9 +261,9 @@ def assert_valid_dataset(dataset, expected_namespace, expected_name_contains=Non
     # Version
     assert dataset.get("currentVersion"), "Dataset currentVersion should not be empty"
 
-    # Validate all facets have correct _producer/_schemaURL
+    # Validate facets produced by our extension (skip Marquez-added facets)
     for facet_name, facet in get_facets(dataset).items():
-        if isinstance(facet, dict) and "_producer" in facet:
+        if isinstance(facet, dict) and facet.get("_producer") == PRODUCER:
             assert_valid_facet(facet, facet_name)
 
 
@@ -331,9 +331,9 @@ def assert_valid_job(job, expected_namespace):
     assert job.get("createdAt"), "Job createdAt should not be empty"
     assert job.get("updatedAt"), "Job updatedAt should not be empty"
 
-    # Validate job facets
+    # Validate facets produced by our extension (skip Marquez-added facets)
     for facet_name, facet in get_facets(job).items():
-        if isinstance(facet, dict) and "_producer" in facet:
+        if isinstance(facet, dict) and facet.get("_producer") == PRODUCER:
             assert_valid_facet(facet, facet_name)
 
 

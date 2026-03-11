@@ -78,7 +78,10 @@ def _dump_dataset_debug(dataset_name, namespaces_to_check):
                 if ns in namespaces_to_check:
                     continue
                 try:
-                    r2 = requests.get(f"{MARQUEZ_API}/namespaces/{ns}/datasets/{dataset_name}", timeout=5)
+                    r2 = requests.get(
+                        f"{MARQUEZ_API}/namespaces/{ns}/datasets/{dataset_name}",
+                        timeout=5,
+                    )
                     if r2.status_code == 200:
                         ds = r2.json()
                         lines.append(f"  FOUND in OTHER namespace '{ns}': name={ds.get('name')}")
@@ -198,7 +201,10 @@ def test_pg_s3_dataset_namespace(duckdb_with_ducklake_pg, marquez_client):
 
     # If not found, check the user namespace to confirm the bug
     dataset_wrong_ns = marquez_client.wait_for_dataset_with_facets(
-        DUCKLAKE_TEST_NAMESPACE, "ducklake_db.main.ns_test", ["catalog"], timeout_seconds=15
+        DUCKLAKE_TEST_NAMESPACE,
+        "ducklake_db.main.ns_test",
+        ["catalog"],
+        timeout_seconds=15,
     )
     if dataset_wrong_ns is not None:
         pytest.fail(
@@ -227,7 +233,10 @@ def test_pg_s3_datasource_uri(duckdb_with_ducklake_pg, marquez_client):
     )
     if dataset is None:
         dataset = marquez_client.wait_for_dataset_with_facets(
-            DUCKLAKE_TEST_NAMESPACE, "ducklake_db.main.ds_test", ["dataSource"], timeout_seconds=15
+            DUCKLAKE_TEST_NAMESPACE,
+            "ducklake_db.main.ds_test",
+            ["dataSource"],
+            timeout_seconds=15,
         )
     assert dataset is not None, f"Dataset not found.\n" + _dump_dataset_debug(
         "ducklake_db.main.ds_test", [S3_DATA_PATH, DUCKLAKE_TEST_NAMESPACE]
@@ -251,7 +260,10 @@ def test_pg_s3_catalog_facet_metadata_uri(duckdb_with_ducklake_pg, marquez_clien
     )
     if dataset is None:
         dataset = marquez_client.wait_for_dataset_with_facets(
-            DUCKLAKE_TEST_NAMESPACE, "ducklake_db.main.cat_test", ["catalog"], timeout_seconds=15
+            DUCKLAKE_TEST_NAMESPACE,
+            "ducklake_db.main.cat_test",
+            ["catalog"],
+            timeout_seconds=15,
         )
     assert dataset is not None, f"Dataset not found.\n" + _dump_dataset_debug(
         "ducklake_db.main.cat_test", [S3_DATA_PATH, DUCKLAKE_TEST_NAMESPACE]
@@ -423,7 +435,10 @@ def test_pg_s3_ctas_memory_to_ducklake(duckdb_with_ducklake_pg, marquez_client):
     )
     if dataset is None:
         dataset = marquez_client.wait_for_dataset_with_facets(
-            DUCKLAKE_TEST_NAMESPACE, "ducklake_db.main.from_mem", ["catalog"], timeout_seconds=15
+            DUCKLAKE_TEST_NAMESPACE,
+            "ducklake_db.main.from_mem",
+            ["catalog"],
+            timeout_seconds=15,
         )
     assert dataset is not None, f"Output dataset not found.\n" + _dump_dataset_debug(
         "ducklake_db.main.from_mem", [S3_DATA_PATH, DUCKLAKE_TEST_NAMESPACE]

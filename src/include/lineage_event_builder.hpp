@@ -352,10 +352,10 @@ private:
 	bool has_job = false;
 
 	// Default constants
-	static constexpr const char *DEFAULT_PRODUCER = "https://github.com/Ilum/duckdb-openlineage";
+	static constexpr const char *DEFAULT_PRODUCER = "https://github.com/ilum-cloud/duck_lineage";
 	static constexpr const char *DEFAULT_SCHEMA_URL =
 	    "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent";
-	static constexpr const char *SQL_FACET_PRODUCER = "https://github.com/Ilum/duckdb-openlineage";
+	static constexpr const char *SQL_FACET_PRODUCER = "https://github.com/ilum-cloud/duck_lineage";
 	static constexpr const char *SQL_FACET_SCHEMA = "https://openlineage.io/spec/job/sql/1-0-0.json";
 	static constexpr const char *PARENT_FACET_SCHEMA = "https://openlineage.io/spec/facets/1-0-0/ParentRunFacet.json";
 	static constexpr const char *ERROR_FACET_SCHEMA =

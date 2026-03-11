@@ -146,7 +146,10 @@ def test_parquet_write_lineage(lineage_connection, marquez_client, tmp_path):
     source = marquez_client.wait_for_dataset_with_fields(namespace, "memory.main.analytics_results")
     assert source is not None, "Source table should be registered in Marquez"
     assert_valid_dataset(source, namespace, "analytics_results")
-    assert_dataset_has_fields(source, {"metric_name": "VARCHAR", "metric_value": "DOUBLE", "timestamp": "TIMESTAMP"})
+    assert_dataset_has_fields(
+        source,
+        {"metric_name": "VARCHAR", "metric_value": "DOUBLE", "timestamp": "TIMESTAMP"},
+    )
 
 
 @pytest.mark.integration
@@ -217,5 +220,9 @@ def test_multiple_file_operations(lineage_connection, marquez_client, tmp_path):
     ]
     if ctas_jobs:
         ctas = ctas_jobs[0]
-        assert_job_has_io(ctas, expected_input_contains="raw_data", expected_output_contains="processed_data")
+        assert_job_has_io(
+            ctas,
+            expected_input_contains="raw_data",
+            expected_output_contains="processed_data",
+        )
         assert_job_has_sql_facet(ctas, "processed_data")

@@ -1461,6 +1461,18 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 		return;
 	}
 
+	// Skip utility statements that don't involve data lineage
+	static const unordered_set<LogicalOperatorType> skip_types = {
+	    LogicalOperatorType::LOGICAL_SET,           LogicalOperatorType::LOGICAL_RESET,
+	    LogicalOperatorType::LOGICAL_PRAGMA,        LogicalOperatorType::LOGICAL_EXPLAIN,
+	    LogicalOperatorType::LOGICAL_TRANSACTION,   LogicalOperatorType::LOGICAL_LOAD,
+	    LogicalOperatorType::LOGICAL_PREPARE,       LogicalOperatorType::LOGICAL_UPDATE_EXTENSIONS,
+	    LogicalOperatorType::LOGICAL_CREATE_SECRET,
+	};
+	if (skip_types.count(plan->type) > 0) {
+		return;
+	}
+
 	// Try to get the query via input.context.GetCurrentQuery();
 	// PreparedStatements don't set active_query, so this may throw or return empty.
 	// We proceed with lineage extraction regardless — view reference detection is

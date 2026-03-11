@@ -14,7 +14,7 @@ services:
       timeout: 5s
       retries: 5
   marquez:
-    image: ilum/marquez:0.53.1
+    image: ilum/marquez:latest
     container_name: marquez
     environment:
       MARQUEZ_PORT: 5000
@@ -35,12 +35,12 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5001/ping || exit 1"]
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/5000"]
       interval: 10s
       timeout: 5s
       retries: 5
   maruqez-ui:
-    image: ilum/marquez-web:0.53.1
+    image: ilum/marquez-web:latest
     container_name: marquez-ui
     environment:
       MARQUEZ_HOST: marquez
