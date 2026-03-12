@@ -1729,11 +1729,12 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
 
 						// Get fully qualified view name: catalog.schema.view
+						string resolved_catalog_name = catalog.GetName();
 						string fully_qualified_name;
 						if (!schema_name.empty()) {
-							fully_qualified_name = catalog_name + "." + schema_name + "." + view_entry.name;
+							fully_qualified_name = resolved_catalog_name + "." + schema_name + "." + view_entry.name;
 						} else {
-							fully_qualified_name = catalog_name + "." + view_entry.name;
+							fully_qualified_name = resolved_catalog_name + "." + view_entry.name;
 						}
 
 						// Extract schema information from the view
