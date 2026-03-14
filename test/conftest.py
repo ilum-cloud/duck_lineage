@@ -30,8 +30,13 @@ def marquez_api_url(marquez_url):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _check_marquez(marquez_url):
-    """Fail fast if Marquez is not reachable."""
+def _check_marquez(request, marquez_url):
+    """Fail fast if Marquez is not reachable (skipped when only running slow/perf tests)."""
+    # Skip Marquez check when no integration tests are collected
+    items = request.session.items
+    needs_marquez = any("slow" not in {m.name for m in item.iter_markers()} for item in items)
+    if not needs_marquez:
+        return
     try:
         resp = requests.get(f"{marquez_url}/api/v1/namespaces", timeout=5)
         resp.raise_for_status()
@@ -112,26 +117,22 @@ def sample_table(duckdb_with_extension):
     """Create a sample table for testing."""
     conn = duckdb_with_extension
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE test_employees (
             id INTEGER,
             name VARCHAR,
             department VARCHAR,
             salary DECIMAL(10,2)
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO test_employees VALUES
             (1, 'Alice', 'Engineering', 95000),
             (2, 'Bob', 'Sales', 75000),
             (3, 'Carol', 'Engineering', 105000),
             (4, 'Dave', 'Marketing', 65000)
-    """
-    )
+    """)
 
     return conn
 
