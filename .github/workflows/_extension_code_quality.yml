@@ -80,13 +80,14 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: "uv.lock"
+          python-version: "3.13"
 
       - name: Cache Python environment
         uses: actions/cache@v4
         with:
           path: .venv
-          key: venv-${{ runner.os }}-format-${{ hashFiles('uv.lock', 'pyproject.toml') }}
-          restore-keys: venv-${{ runner.os }}-format-
+          key: venv-${{ runner.os }}-py313-format-${{ hashFiles('uv.lock', 'pyproject.toml') }}
+          restore-keys: venv-${{ runner.os }}-py313-format-
 
       - name: Cache APT Packages
         uses: awalsh128/cache-apt-pkgs-action@v1.6.0
