@@ -943,6 +943,67 @@ def test_array_agg_lineage(col_conn, marquez_client):
 
 
 @pytest.mark.integration
+def test_case_with_indirect_source_is_indirect(col_conn, marquez_client):
+    """CASE referencing UNNEST-derived column should be INDIRECT."""
+    col_conn.execute("""
+        CREATE TABLE ext_case_indirect_src (id INTEGER, tags INTEGER[]);
+        INSERT INTO ext_case_indirect_src VALUES (1, [10, 20]), (2, [30]);
+    """)
+    col_conn.execute("""
+        CREATE TABLE ext_case_indirect_out AS
+        SELECT id, CASE WHEN UNNEST(tags) > 15 THEN UNNEST(tags) ELSE 0 END AS tag_case
+        FROM ext_case_indirect_src
+    """)
+    sleep(3)
+
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
+    cl, output = _get_column_lineage_from_complete_events(events, "ext_case_indirect_out")
+
+    assert cl is not None, "columnLineage facet should be present"
+    assert_transformation_type(cl, "id", "DIRECT")
+    assert_transformation_type(cl, "tag_case", "INDIRECT")
+
+
+@pytest.mark.integration
+def test_window_over_unnest_is_indirect(col_conn, marquez_client):
+    """Window function over UNNEST-derived column should be INDIRECT."""
+    col_conn.execute("""
+        CREATE TABLE ext_win_unnest_src (id INTEGER, tags INTEGER[]);
+        INSERT INTO ext_win_unnest_src VALUES (1, [10, 20]), (2, [30]);
+    """)
+    col_conn.execute("""
+        CREATE TABLE ext_win_unnest_out AS
+        SELECT id, SUM(tag) OVER (PARTITION BY id) AS tag_sum
+        FROM (SELECT id, UNNEST(tags) AS tag FROM ext_win_unnest_src)
+    """)
+    sleep(3)
+
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
+    cl, output = _get_column_lineage_from_complete_events(events, "ext_win_unnest_out")
+
+    assert cl is not None, "columnLineage facet should be present"
+    assert_transformation_type(cl, "tag_sum", "INDIRECT")
+
+
+@pytest.mark.integration
+def test_materialized_cte_lineage(col_conn, marquez_client):
+    """Materialized CTE traces to base table."""
+    col_conn.execute("""
+        CREATE TABLE ext_matcte_out AS
+        WITH cte AS MATERIALIZED (SELECT id, name FROM source_a)
+        SELECT id, name FROM cte
+    """)
+    sleep(3)
+
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
+    cl, output = _get_column_lineage_from_complete_events(events, "ext_matcte_out")
+
+    assert cl is not None, "columnLineage facet should be present"
+    assert_column_lineage_field_has_source(cl, "id", "source_a", "id")
+    assert_column_lineage_field_has_source(cl, "name", "source_a", "name")
+
+
+@pytest.mark.integration
 def test_exact_field_count(col_conn, marquez_client):
     """SELECT id, name FROM source_a -> exactly 2 fields, no spurious entries."""
     col_conn.execute("CREATE TABLE ext_exact_out AS SELECT id, name FROM source_a")

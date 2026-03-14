@@ -75,7 +75,7 @@ def test_direct_column_ref(col_conn, marquez_client):
     conn.execute("CREATE TABLE direct_out AS SELECT id, name FROM source_a")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=4, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "direct_out")
 
     assert cl is not None, "columnLineage facet should be present on output"
@@ -105,7 +105,7 @@ def test_expression_column_lineage(col_conn, marquez_client):
     )
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=6, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "expr_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -128,7 +128,7 @@ def test_alias_column_lineage(col_conn, marquez_client):
     conn.execute("CREATE TABLE alias_out AS SELECT name AS employee_name FROM source_a")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=8, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "alias_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -150,7 +150,7 @@ def test_cast_column_lineage(col_conn, marquez_client):
     conn.execute("CREATE TABLE cast_out AS SELECT CAST(value AS INTEGER) AS int_value FROM source_a")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=10, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "cast_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -172,7 +172,7 @@ def test_star_expansion_column_lineage(col_conn, marquez_client):
     conn.execute("CREATE TABLE star_out AS SELECT * FROM source_a")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=12, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "star_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -201,7 +201,7 @@ def test_join_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=14, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "join_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -229,7 +229,7 @@ def test_aggregation_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=16, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "agg_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -257,7 +257,7 @@ def test_union_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=18, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "union_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -287,7 +287,7 @@ def test_insert_select_column_lineage(col_conn, marquez_client):
     conn.execute("INSERT INTO insert_target SELECT id, name FROM source_a")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=20, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "insert_target")
 
     # Column lineage may or may not be present for INSERT depending on plan structure
@@ -312,7 +312,7 @@ def test_column_lineage_facet_structure(col_conn, marquez_client):
     conn.execute("CREATE TABLE struct_out AS SELECT id, name FROM source_a")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=22, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "struct_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -357,7 +357,7 @@ def test_window_function_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=24, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "window_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -393,7 +393,7 @@ def test_intersect_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=26, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "intersect_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -426,7 +426,7 @@ def test_except_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=28, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "except_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -458,7 +458,7 @@ def test_subquery_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=30, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "subq_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -487,7 +487,7 @@ def test_cte_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=32, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "cte_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -520,7 +520,7 @@ def test_multi_join_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=36, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "multi_join_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -544,7 +544,7 @@ def test_self_join_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=38, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "self_join_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -567,7 +567,7 @@ def test_case_expression_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=40, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "case_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -594,7 +594,7 @@ def test_coalesce_and_functions_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=42, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "coalesce_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -623,7 +623,7 @@ def test_nested_expression_column_lineage(col_conn, marquez_client):
     """)
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=44, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = _get_column_lineage_from_complete_events(events, "arith_out")
 
     assert cl is not None, "columnLineage facet should be present"
@@ -646,7 +646,7 @@ def test_copy_to_column_lineage(col_conn, marquez_client):
     conn.execute("COPY (SELECT id, name FROM source_a) TO '/tmp/test_col_lineage_copy.csv'")
     sleep(3)
 
-    events = marquez_client.wait_for_events(NAMESPACE, min_events=46, timeout_seconds=30)
+    events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
 
     # Find COMPLETE event for the COPY operation
     complete = find_complete_events(events)

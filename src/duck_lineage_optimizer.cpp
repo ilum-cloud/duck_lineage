@@ -1852,15 +1852,17 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 	// ===== Extract column-level lineage =====
 	try {
-		ColumnLineageExtractor extractor(input.context);
-		extractor.BuildLineageMap(*plan);
-
-		// Get output datasets without building the full JSON event
+		// Check for output datasets first to avoid expensive plan traversal
 		auto output_datasets = builder.GetOutputDatasets();
-		for (const auto &out : output_datasets) {
-			auto col_lineage = extractor.ExtractOutputColumnLineage(*plan, out.namespace_, out.name);
-			if (!col_lineage.empty()) {
-				builder.AddOutputDatasetFacet_ColumnLineage(out.namespace_, out.name, col_lineage);
+		if (!output_datasets.empty()) {
+			ColumnLineageExtractor extractor(input.context);
+			extractor.BuildLineageMap(*plan);
+
+			for (const auto &out : output_datasets) {
+				auto col_lineage = extractor.ExtractOutputColumnLineage(*plan, out.namespace_, out.name);
+				if (!col_lineage.empty()) {
+					builder.AddOutputDatasetFacet_ColumnLineage(out.namespace_, out.name, col_lineage);
+				}
 			}
 		}
 	} catch (std::exception &e) {
