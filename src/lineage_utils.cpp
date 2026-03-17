@@ -142,9 +142,8 @@ std::string InferStatementType(const PlanAnalysis &analysis) {
 	// Check for write operations in direct children (e.g., CREATE TABLE AS SELECT)
 	for (auto child_type : analysis.child_types) {
 		auto child_it = operator_type_names.find(child_type);
-		if (child_it != operator_type_names.end() &&
-		    (child_type == LogicalOperatorType::LOGICAL_INSERT ||
-		     child_type == LogicalOperatorType::LOGICAL_CREATE_TABLE)) {
+		if (child_it != operator_type_names.end() && (child_type == LogicalOperatorType::LOGICAL_INSERT ||
+		                                              child_type == LogicalOperatorType::LOGICAL_CREATE_TABLE)) {
 			return child_it->second;
 		}
 	}

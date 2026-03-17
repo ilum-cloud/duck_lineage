@@ -191,8 +191,7 @@ def test_pivot_transformation_type(col_conn, marquez_client):
             input_fields = field_entry.get("inputFields") or []
             source_cols = [f.get("field", "").lower() for f in input_fields]
             assert any("revenue" in s for s in source_cols), (
-                f"Pivoted column {field_name!r} should trace to 'revenue'. "
-                f"Found sources: {source_cols}"
+                f"Pivoted column {field_name!r} should trace to 'revenue'. " f"Found sources: {source_cols}"
             )
 
 
@@ -683,9 +682,7 @@ def test_three_way_union(col_conn, marquez_client):
     id_field = fields_lower.get("id")
     assert id_field is not None, f"Missing 'id' field. Fields: {list(fields.keys())}"
     input_fields = id_field.get("inputFields") or []
-    assert len(input_fields) >= 3, (
-        f"3-way UNION id should have at least 3 inputFields, got {len(input_fields)}"
-    )
+    assert len(input_fields) >= 3, f"3-way UNION id should have at least 3 inputFields, got {len(input_fields)}"
 
 
 @pytest.mark.integration
@@ -709,9 +706,7 @@ def test_mixed_set_operations(col_conn, marquez_client):
     assert id_field is not None, f"Missing 'id' field. Fields: {list(fields.keys())}"
     input_fields = id_field.get("inputFields") or []
     # Should merge sources from the nested UNION and the INTERSECT branch
-    assert len(input_fields) >= 2, (
-        f"Mixed set ops id should have at least 2 inputFields, got {len(input_fields)}"
-    )
+    assert len(input_fields) >= 2, f"Mixed set ops id should have at least 2 inputFields, got {len(input_fields)}"
 
 
 # ══════════════════════════════════════════════════════════════════════════
