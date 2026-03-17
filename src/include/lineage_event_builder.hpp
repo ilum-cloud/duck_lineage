@@ -310,6 +310,20 @@ public:
 	static json CreateSchemaField(const std::string &field_name, const std::string &field_type);
 
 	//===--------------------------------------------------------------------===//
+	// Accessors
+	//===--------------------------------------------------------------------===//
+
+	/// @brief Reference to an output dataset (namespace + name) without building full JSON
+	struct DatasetRef {
+		std::string namespace_;
+		std::string name;
+	};
+
+	/// @brief Get output dataset references without calling Build()
+	/// @return Vector of namespace+name pairs for all output datasets
+	std::vector<DatasetRef> GetOutputDatasets() const;
+
+	//===--------------------------------------------------------------------===//
 	// Build
 	//===--------------------------------------------------------------------===//
 

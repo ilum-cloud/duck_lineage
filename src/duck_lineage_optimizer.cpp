@@ -1502,7 +1502,29 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// Solution: Parse the original SQL to find view references.
 	// NOTE: This only works when the original query string is available (not PreparedStatements).
 	unordered_set<string> referenced_views;
-	if (has_original_query) {
+
+	// Cheap heuristic: only parse if the query might reference views.
+	// Views are referenced via FROM/JOIN clauses. Very short queries (e.g. SELECT 1)
+	// cannot contain view references, so skip the full SQL re-parse for them.
+	// Case-insensitive search for FROM/JOIN keywords
+	auto contains_ci = [](const string &haystack, const char *needle, size_t needle_len) {
+		if (haystack.size() < needle_len) return false;
+		for (size_t i = 0; i <= haystack.size() - needle_len; i++) {
+			bool match = true;
+			for (size_t j = 0; j < needle_len; j++) {
+				if (std::tolower(static_cast<unsigned char>(haystack[i + j])) != needle[j]) {
+					match = false;
+					break;
+				}
+			}
+			if (match) return true;
+		}
+		return false;
+	};
+	bool might_have_views = has_original_query && query.size() > 20 &&
+	                        (contains_ci(query, "from", 4) || contains_ci(query, "join", 4));
+
+	if (might_have_views) {
 		Parser parser;
 		try {
 			parser.ParseQuery(query);
@@ -1631,7 +1653,10 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// Generate unique identifiers for this query execution
 	// When query string is unavailable, use the plan representation for hash uniqueness
 	string hash_input = has_original_query ? query : plan->ToString();
-	string jobName = GenerateJobName(*plan, hash_input);
+
+	// Single-pass plan analysis (replaces ~13 separate tree traversals)
+	auto plan_analysis = AnalyzePlan(*plan);
+	string jobName = GenerateJobName(plan_analysis, hash_input);
 
 	if (LineageClient::Get().IsDebug() && !has_original_query) {
 		Printer::Print("OpenLineage Debug: Using plan representation for job name hash: " + hash_input);
@@ -1829,18 +1854,12 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 		ColumnLineageExtractor extractor(input.context);
 		extractor.BuildLineageMap(*plan);
 
-		// Get output datasets from the builder to attach column lineage to each
-		json temp_event = builder.Build();
-		if (temp_event.contains("outputs") && temp_event["outputs"].is_array()) {
-			for (auto &output : temp_event["outputs"]) {
-				if (output.contains("namespace") && output.contains("name")) {
-					string out_ns = output["namespace"];
-					string out_name = output["name"];
-					auto col_lineage = extractor.ExtractOutputColumnLineage(*plan, out_ns, out_name);
-					if (!col_lineage.empty()) {
-						builder.AddOutputDatasetFacet_ColumnLineage(out_ns, out_name, col_lineage);
-					}
-				}
+		// Get output datasets without building the full JSON event
+		auto output_datasets = builder.GetOutputDatasets();
+		for (const auto &out : output_datasets) {
+			auto col_lineage = extractor.ExtractOutputColumnLineage(*plan, out.namespace_, out.name);
+			if (!col_lineage.empty()) {
+				builder.AddOutputDatasetFacet_ColumnLineage(out.namespace_, out.name, col_lineage);
 			}
 		}
 	} catch (std::exception &e) {

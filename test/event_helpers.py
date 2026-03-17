@@ -461,3 +461,61 @@ def assert_column_lineage_field_has_source(col_lineage_facet, output_col, source
         f"Field {output_col!r} should trace to {source_table_contains!r}.{source_col!r}. "
         f"Found: {[(f.get('name'), f.get('field')) for f in input_fields]}"
     )
+
+
+def assert_transformation_type(col_lineage_facet, output_col, expected_type):
+    """Validate transformationType is exactly 'DIRECT' or 'INDIRECT' for a given output column.
+
+    Case-insensitive column name lookup.
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    assert field_entry, (
+        f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
+    )
+
+    actual_type = field_entry.get("transformationType")
+    assert actual_type == expected_type, (
+        f"Field {output_col!r} transformationType mismatch: " f"{actual_type!r} != {expected_type!r}"
+    )
+
+
+def assert_field_input_count(col_lineage_facet, output_col, expected_count):
+    """Validate the exact number of inputFields for an output column.
+
+    Catches spurious or missing lineage entries.
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    assert field_entry, (
+        f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
+    )
+
+    input_fields = field_entry.get("inputFields") or []
+    assert len(input_fields) == expected_count, (
+        f"Field {output_col!r} expected {expected_count} inputFields, "
+        f"got {len(input_fields)}: {[(f.get('name'), f.get('field')) for f in input_fields]}"
+    )
+
+
+def assert_field_has_no_sources(col_lineage_facet, output_col):
+    """Validate an output column either doesn't appear in fields or has 0 inputFields.
+
+    For constants/literals that have no source columns.
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    if field_entry is None:
+        return  # Not in fields at all — passes
+
+    input_fields = field_entry.get("inputFields") or []
+    assert len(input_fields) == 0, (
+        f"Field {output_col!r} should have no sources, "
+        f"got {len(input_fields)}: {[(f.get('name'), f.get('field')) for f in input_fields]}"
+    )
