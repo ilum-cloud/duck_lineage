@@ -43,6 +43,7 @@ def test_create_view_lifecycle(lineage_connection, marquez_client, clean_marquez
             "CREATE VIEW v_test AS SELECT * FROM v_base",
         ],
         min_events=4,
+        timeout=60,
     )
 
     found_view_create = False

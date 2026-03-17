@@ -12,6 +12,7 @@
 #include "lineage_client.hpp"
 #include "lineage_utils.hpp"
 #include "lineage_event_builder.hpp"
+#include "column_lineage_extractor.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
 #include "duckdb/planner/operator/logical_delete.hpp"
@@ -1630,7 +1631,10 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// Generate unique identifiers for this query execution
 	// When query string is unavailable, use the plan representation for hash uniqueness
 	string hash_input = has_original_query ? query : plan->ToString();
-	string jobName = GenerateJobName(*plan, hash_input);
+
+	// Single-pass plan analysis (replaces ~13 separate tree traversals)
+	auto plan_analysis = AnalyzePlan(*plan);
+	string jobName = GenerateJobName(plan_analysis, hash_input);
 
 	if (LineageClient::Get().IsDebug() && !has_original_query) {
 		Printer::Print("OpenLineage Debug: Using plan representation for job name hash: " + hash_input);
@@ -1822,6 +1826,31 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// Traverse the logical plan to extract input/output datasets
 	LineagePlanVisitor visitor(input.context, builder, view_dependencies, view_dependency_tables);
 	visitor.Visit(*plan);
+
+	// ===== Extract column-level lineage =====
+	try {
+		// Check for output datasets first to avoid expensive plan traversal
+		auto output_datasets = builder.GetOutputDatasets();
+		if (!output_datasets.empty()) {
+			ColumnLineageExtractor extractor(input.context);
+			extractor.BuildLineageMap(*plan);
+
+			for (const auto &out : output_datasets) {
+				auto col_lineage = extractor.ExtractOutputColumnLineage(*plan, out.namespace_, out.name);
+				if (!col_lineage.empty()) {
+					builder.AddOutputDatasetFacet_ColumnLineage(out.namespace_, out.name, col_lineage);
+				}
+			}
+		}
+	} catch (std::exception &e) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Column lineage extraction failed: " + string(e.what()));
+		}
+	} catch (...) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Column lineage extraction failed (unknown error)");
+		}
+	}
 
 	// ===== Check for parent run context from environment =====
 	const char *parent_run_id_env = std::getenv("OPENLINEAGE_PARENT_RUN_ID");

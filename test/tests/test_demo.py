@@ -13,7 +13,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from marquez import TestMarquezClient
+from marquez import MarquezTestClient
 from event_helpers import (
     assert_valid_event,
     get_inputs,
@@ -87,7 +87,7 @@ def demo_seed():
 @pytest.fixture(scope="module")
 def marquez():
     """Marquez client for querying the demo namespace."""
-    return TestMarquezClient("http://localhost:5000")
+    return MarquezTestClient("http://localhost:5000")
 
 
 # ---------------------------------------------------------------------------
