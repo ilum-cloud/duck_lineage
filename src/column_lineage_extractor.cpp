@@ -784,16 +784,19 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 			for (auto &src : when_lineage.sources) {
 				result.sources.push_back(src);
 			}
+			result.is_direct = result.is_direct && when_lineage.is_direct;
 			auto then_lineage = ResolveExpression(*check.then_expr);
 			for (auto &src : then_lineage.sources) {
 				result.sources.push_back(src);
 			}
+			result.is_direct = result.is_direct && then_lineage.is_direct;
 		}
 		if (case_expr.else_expr) {
 			auto else_lineage = ResolveExpression(*case_expr.else_expr);
 			for (auto &src : else_lineage.sources) {
 				result.sources.push_back(src);
 			}
+			result.is_direct = result.is_direct && else_lineage.is_direct;
 		}
 		break;
 	}
@@ -804,18 +807,21 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 			for (auto &src : child_lineage.sources) {
 				result.sources.push_back(src);
 			}
+			result.is_direct = result.is_direct && child_lineage.is_direct;
 		}
 		for (auto &partition : window_expr.partitions) {
 			auto part_lineage = ResolveExpression(*partition);
 			for (auto &src : part_lineage.sources) {
 				result.sources.push_back(src);
 			}
+			result.is_direct = result.is_direct && part_lineage.is_direct;
 		}
 		for (auto &order : window_expr.orders) {
 			auto order_lineage = ResolveExpression(*order.expression);
 			for (auto &src : order_lineage.sources) {
 				result.sources.push_back(src);
 			}
+			result.is_direct = result.is_direct && order_lineage.is_direct;
 		}
 		break;
 	}
