@@ -337,6 +337,9 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 					}
 				}
 			} catch (...) {
+				if (LineageClient::Get().IsDebug()) {
+					Printer::Print("OpenLineage Debug: Failed to resolve data_path for column lineage");
+				}
 			}
 
 			if (!data_path.empty()) {
@@ -345,6 +348,9 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 				dataset_ns = LineageClient::Get().GetNamespace();
 			}
 		} catch (...) {
+			if (LineageClient::Get().IsDebug()) {
+				Printer::Print("OpenLineage Debug: Failed to resolve namespace for column lineage");
+			}
 			dataset_ns = LineageClient::Get().GetNamespace();
 		}
 
