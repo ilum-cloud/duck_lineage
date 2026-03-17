@@ -34,8 +34,10 @@ struct SourceColumn {
 /// @brief Hash function for SourceColumn (for deduplication in sets).
 struct SourceColumnHash {
 	size_t operator()(const SourceColumn &sc) const {
-		return std::hash<string>()(sc.dataset_namespace) ^ (std::hash<string>()(sc.dataset_name) << 1) ^
-		       (std::hash<string>()(sc.column_name) << 2);
+		size_t h = std::hash<string>()(sc.dataset_namespace);
+		h ^= std::hash<string>()(sc.dataset_name) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		h ^= std::hash<string>()(sc.column_name) + 0x9e3779b9 + (h << 6) + (h >> 2);
+		return h;
 	}
 };
 
