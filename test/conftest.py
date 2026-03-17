@@ -14,6 +14,8 @@ import duckdb
 import requests
 from pathlib import Path
 
+from event_helpers import TEST_NAMESPACE
+
 from marquez import TestMarquezClient
 
 
@@ -84,7 +86,7 @@ def duckdb_with_extension(extension_path, marquez_api_url):
 
         # Configure the extension to point to Marquez
         conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
-        conn.execute("SET duck_lineage_namespace = 'duckdb_test'")
+        conn.execute(f"SET duck_lineage_namespace = '{TEST_NAMESPACE}'")
         conn.execute("SET duck_lineage_debug = true")
 
         yield conn

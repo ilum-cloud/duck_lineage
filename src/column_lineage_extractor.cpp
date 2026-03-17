@@ -50,10 +50,6 @@ ColumnLineageExtractor::ColumnLineageExtractor(ClientContext &context) : context
 // Utility
 //===--------------------------------------------------------------------===//
 
-uint64_t ColumnLineageExtractor::PackBinding(const ColumnBinding &binding) {
-	return (static_cast<uint64_t>(binding.table_index) << 32) | static_cast<uint64_t>(binding.column_index);
-}
-
 void ColumnLineageExtractor::DeduplicateSources(BindingLineage &lineage) {
 	unordered_set<SourceColumn, SourceColumnHash> seen;
 	vector<SourceColumn> unique_sources;
@@ -237,7 +233,7 @@ vector<ColumnLineageField> ColumnLineageExtractor::ExtractOutputColumnLineage(Lo
 	auto col_names = GetOperatorColumnNames(*data_op);
 
 	for (idx_t i = 0; i < bindings.size(); i++) {
-		auto key = PackBinding(bindings[i]);
+		auto key = bindings[i];
 		auto it = lineage_map.find(key);
 		if (it == lineage_map.end() || it->second.sources.empty()) {
 			continue;
@@ -381,6 +377,9 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 					}
 				}
 			} catch (...) {
+				if (LineageClient::Get().IsDebug()) {
+					Printer::Print("OpenLineage Debug: Failed to extract file path from MultiFileBindData for column lineage");
+				}
 			}
 		}
 		if (dataset_name.empty()) {
@@ -424,7 +423,7 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 		lineage.sources.push_back(src);
 		lineage.is_direct = true;
 
-		lineage_map[PackBinding(bindings[i])] = std::move(lineage);
+		lineage_map[bindings[i]] = std::move(lineage);
 	}
 }
 
@@ -441,7 +440,7 @@ void ColumnLineageExtractor::HandleProjection(LogicalOperator &op) {
 		DeduplicateSources(resolved);
 
 		if (!resolved.sources.empty()) {
-			lineage_map[PackBinding(bindings[i])] = std::move(resolved);
+			lineage_map[bindings[i]] = std::move(resolved);
 		}
 	}
 }
@@ -462,10 +461,10 @@ void ColumnLineageExtractor::HandleFilter(LogicalOperator &op) {
 			}
 
 			if (child_idx < child_bindings.size()) {
-				auto child_key = PackBinding(child_bindings[child_idx]);
+				auto child_key = child_bindings[child_idx];
 				auto it = lineage_map.find(child_key);
 				if (it != lineage_map.end()) {
-					lineage_map[PackBinding(my_bindings[i])] = it->second;
+					lineage_map[my_bindings[i]] = it->second;
 				}
 			}
 		}
@@ -524,10 +523,10 @@ void ColumnLineageExtractor::HandleJoin(LogicalOperator &op) {
 
 	// Map my bindings to source bindings
 	for (idx_t i = 0; i < my_bindings.size() && i < source_bindings.size(); i++) {
-		auto source_key = PackBinding(source_bindings[i]);
+		auto source_key = source_bindings[i];
 		auto it = lineage_map.find(source_key);
 		if (it != lineage_map.end()) {
-			lineage_map[PackBinding(my_bindings[i])] = it->second;
+			lineage_map[my_bindings[i]] = it->second;
 		}
 	}
 }
@@ -545,7 +544,7 @@ void ColumnLineageExtractor::HandleAggregate(LogicalOperator &op) {
 			auto resolved = ResolveExpression(*agg.groups[i]);
 			DeduplicateSources(resolved);
 			if (!resolved.sources.empty()) {
-				lineage_map[PackBinding(bindings[i])] = std::move(resolved);
+				lineage_map[bindings[i]] = std::move(resolved);
 			}
 		} else {
 			// Aggregate expressions (SUM, COUNT, etc.)
@@ -554,7 +553,7 @@ void ColumnLineageExtractor::HandleAggregate(LogicalOperator &op) {
 				auto resolved = ResolveExpression(*agg.expressions[agg_idx]);
 				DeduplicateSources(resolved);
 				if (!resolved.sources.empty()) {
-					lineage_map[PackBinding(bindings[i])] = std::move(resolved);
+					lineage_map[bindings[i]] = std::move(resolved);
 				}
 			}
 		}
@@ -577,7 +576,7 @@ void ColumnLineageExtractor::HandleSetOperation(LogicalOperator &op) {
 
 		// Add sources from left child
 		if (i < left_bindings.size()) {
-			auto left_key = PackBinding(left_bindings[i]);
+			auto left_key = left_bindings[i];
 			auto it = lineage_map.find(left_key);
 			if (it != lineage_map.end()) {
 				for (auto &src : it->second.sources) {
@@ -589,7 +588,7 @@ void ColumnLineageExtractor::HandleSetOperation(LogicalOperator &op) {
 
 		// Add sources from right child
 		if (i < right_bindings.size()) {
-			auto right_key = PackBinding(right_bindings[i]);
+			auto right_key = right_bindings[i];
 			auto it = lineage_map.find(right_key);
 			if (it != lineage_map.end()) {
 				for (auto &src : it->second.sources) {
@@ -601,7 +600,7 @@ void ColumnLineageExtractor::HandleSetOperation(LogicalOperator &op) {
 
 		DeduplicateSources(merged);
 		if (!merged.sources.empty()) {
-			lineage_map[PackBinding(my_bindings[i])] = std::move(merged);
+			lineage_map[my_bindings[i]] = std::move(merged);
 		}
 	}
 }
@@ -616,10 +615,10 @@ void ColumnLineageExtractor::HandleWindow(LogicalOperator &op) {
 
 		// First N bindings are pass-through from child
 		for (idx_t i = 0; i < child_bindings.size() && i < my_bindings.size(); i++) {
-			auto child_key = PackBinding(child_bindings[i]);
+			auto child_key = child_bindings[i];
 			auto it = lineage_map.find(child_key);
 			if (it != lineage_map.end()) {
-				lineage_map[PackBinding(my_bindings[i])] = it->second;
+				lineage_map[my_bindings[i]] = it->second;
 			}
 		}
 
@@ -630,7 +629,7 @@ void ColumnLineageExtractor::HandleWindow(LogicalOperator &op) {
 				auto resolved = ResolveExpression(*window.expressions[expr_idx]);
 				DeduplicateSources(resolved);
 				if (!resolved.sources.empty()) {
-					lineage_map[PackBinding(my_bindings[i])] = std::move(resolved);
+					lineage_map[my_bindings[i]] = std::move(resolved);
 				}
 			}
 		}
@@ -652,10 +651,10 @@ void ColumnLineageExtractor::HandlePivot(LogicalOperator &op) {
 		if (i < group_count) {
 			// Group columns: pass through from child (1:1 positional)
 			if (i < child_bindings.size()) {
-				auto child_key = PackBinding(child_bindings[i]);
+				auto child_key = child_bindings[i];
 				auto it = lineage_map.find(child_key);
 				if (it != lineage_map.end()) {
-					lineage_map[PackBinding(my_bindings[i])] = it->second;
+					lineage_map[my_bindings[i]] = it->second;
 				}
 			}
 		} else {
@@ -669,7 +668,7 @@ void ColumnLineageExtractor::HandlePivot(LogicalOperator &op) {
 					DeduplicateSources(resolved);
 					resolved.is_direct = false; // aggregation is always indirect
 					if (!resolved.sources.empty()) {
-						lineage_map[PackBinding(my_bindings[i])] = std::move(resolved);
+						lineage_map[my_bindings[i]] = std::move(resolved);
 					}
 				}
 			}
@@ -689,10 +688,10 @@ void ColumnLineageExtractor::HandleUnnest(LogicalOperator &op) {
 
 	// First N bindings: pass-through from child
 	for (idx_t i = 0; i < child_bindings.size() && i < my_bindings.size(); i++) {
-		auto child_key = PackBinding(child_bindings[i]);
+		auto child_key = child_bindings[i];
 		auto it = lineage_map.find(child_key);
 		if (it != lineage_map.end()) {
-			lineage_map[PackBinding(my_bindings[i])] = it->second;
+			lineage_map[my_bindings[i]] = it->second;
 		}
 	}
 
@@ -704,14 +703,18 @@ void ColumnLineageExtractor::HandleUnnest(LogicalOperator &op) {
 			DeduplicateSources(resolved);
 			resolved.is_direct = false; // unnesting transforms the structure
 			if (!resolved.sources.empty()) {
-				lineage_map[PackBinding(my_bindings[i])] = std::move(resolved);
+				lineage_map[my_bindings[i]] = std::move(resolved);
 			}
 		}
 	}
 }
 
 void ColumnLineageExtractor::HandleDefaultPassthrough(LogicalOperator &op) {
-	// Default: pass through child bindings unchanged
+	// Default: pass through child bindings unchanged.
+	// NOTE: For LOGICAL_MATERIALIZED_CTE, children[0] is the CTE definition which
+	// produces the bindings we need. This differs from GetOperatorColumnNames() which
+	// uses children[1] (the main query) for *names*. The asymmetry is intentional:
+	// bindings come from the CTE body, names come from the consumer.
 	if (op.children.empty()) {
 		return;
 	}
@@ -720,10 +723,10 @@ void ColumnLineageExtractor::HandleDefaultPassthrough(LogicalOperator &op) {
 	auto child_bindings = op.children[0]->GetColumnBindings();
 
 	for (idx_t i = 0; i < my_bindings.size() && i < child_bindings.size(); i++) {
-		auto child_key = PackBinding(child_bindings[i]);
+		auto child_key = child_bindings[i];
 		auto it = lineage_map.find(child_key);
 		if (it != lineage_map.end()) {
-			lineage_map[PackBinding(my_bindings[i])] = it->second;
+			lineage_map[my_bindings[i]] = it->second;
 		}
 	}
 }
@@ -738,7 +741,7 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	switch (expr.expression_class) {
 	case ExpressionClass::BOUND_COLUMN_REF: {
 		auto &col_ref = expr.Cast<BoundColumnRefExpression>();
-		auto key = PackBinding(col_ref.binding);
+		auto key = col_ref.binding;
 		auto it = lineage_map.find(key);
 		if (it != lineage_map.end()) {
 			result = it->second;
@@ -807,6 +810,10 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 		break;
 	}
 	case ExpressionClass::BOUND_WINDOW: {
+		// Window functions propagate is_direct from their children, unlike aggregates
+		// (which are always INDIRECT). This is a deliberate design choice: window functions
+		// compute over a set of rows but return one value per row, preserving the row-level
+		// relationship. A standalone ROW_NUMBER() OVER(...) is thus marked DIRECT.
 		auto &window_expr = expr.Cast<BoundWindowExpression>();
 		for (auto &child : window_expr.children) {
 			auto child_lineage = ResolveExpression(*child);

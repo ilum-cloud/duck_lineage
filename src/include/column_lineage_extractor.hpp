@@ -12,9 +12,9 @@
 
 #include "duckdb/planner/logical_operator.hpp"
 #include "duckdb/planner/column_binding.hpp"
+#include "duckdb/planner/column_binding_map.hpp"
 #include "duckdb/main/client_context.hpp"
 #include <string>
-#include <unordered_map>
 #include <vector>
 
 namespace duckdb {
@@ -54,8 +54,7 @@ struct ColumnLineageField {
 	string transformation_type; // "DIRECT" or "INDIRECT"
 };
 
-/// @brief Key: packed (table_index << 32 | column_index)
-using BindingLineageMap = unordered_map<uint64_t, BindingLineage>;
+using BindingLineageMap = column_binding_map_t<BindingLineage>;
 
 /// @class ColumnLineageExtractor
 /// @brief Extracts column-level lineage from a DuckDB logical plan.
@@ -83,9 +82,6 @@ public:
 private:
 	ClientContext &context;
 	BindingLineageMap lineage_map;
-
-	/// @brief Pack a ColumnBinding into a uint64_t key.
-	static uint64_t PackBinding(const ColumnBinding &binding);
 
 	/// @brief Recursively traverse the plan bottom-up, populating lineage_map.
 	void TraversePlan(LogicalOperator &op);

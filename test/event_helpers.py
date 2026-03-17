@@ -28,6 +28,8 @@ FACET_SCHEMAS = {
     "columnLineage": "https://openlineage.io/spec/facets/1-1-1/ColumnLineageDatasetFacet.json",
 }
 
+TEST_NAMESPACE = "duckdb_test"
+
 VALID_EVENT_TYPES = {"START", "COMPLETE", "FAIL"}
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
@@ -56,10 +58,10 @@ def get_run_facets(event):
 # ── Query + poll ───────────────────────────────────────────────────────
 
 
-def run_and_wait(conn, marquez_client, namespace, queries, min_events, timeout=30):
+def run_and_wait(conn, marquez_client, namespace, queries, min_events, timeout=30, initial_delay=2):
     for q in queries:
         conn.execute(q)
-    sleep(2)
+    sleep(initial_delay)
     return marquez_client.wait_for_events(namespace, min_events, timeout_seconds=timeout)
 
 

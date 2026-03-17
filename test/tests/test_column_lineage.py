@@ -9,6 +9,7 @@ import pytest
 from time import sleep
 
 from event_helpers import (
+    TEST_NAMESPACE as NAMESPACE,
     run_and_wait,
     find_complete_events,
     get_outputs,
@@ -18,8 +19,6 @@ from event_helpers import (
     assert_output_has_column_lineage,
     assert_column_lineage_field_has_source,
 )
-
-NAMESPACE = "duckdb_test"
 
 
 # ── Test: Direct column references ──────────────────────────────────────

@@ -10,6 +10,7 @@ import pytest
 from time import sleep
 
 from event_helpers import (
+    TEST_NAMESPACE as NAMESPACE,
     find_complete_events,
     get_outputs,
     get_facets,
@@ -21,8 +22,6 @@ from event_helpers import (
     assert_field_input_count,
     assert_field_has_no_sources,
 )
-
-NAMESPACE = "duckdb_test"
 
 
 # ══════════════════════════════════════════════════════════════════════════
