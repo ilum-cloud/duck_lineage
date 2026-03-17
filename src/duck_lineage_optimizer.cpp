@@ -12,6 +12,7 @@
 #include "lineage_client.hpp"
 #include "lineage_utils.hpp"
 #include "lineage_event_builder.hpp"
+#include "column_lineage_extractor.hpp"
 #include "duckdb/planner/operator/logical_get.hpp"
 #include "duckdb/planner/operator/logical_insert.hpp"
 #include "duckdb/planner/operator/logical_delete.hpp"
@@ -1822,6 +1823,35 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// Traverse the logical plan to extract input/output datasets
 	LineagePlanVisitor visitor(input.context, builder, view_dependencies, view_dependency_tables);
 	visitor.Visit(*plan);
+
+	// ===== Extract column-level lineage =====
+	try {
+		ColumnLineageExtractor extractor(input.context);
+		extractor.BuildLineageMap(*plan);
+
+		// Get output datasets from the builder to attach column lineage to each
+		json temp_event = builder.Build();
+		if (temp_event.contains("outputs") && temp_event["outputs"].is_array()) {
+			for (auto &output : temp_event["outputs"]) {
+				if (output.contains("namespace") && output.contains("name")) {
+					string out_ns = output["namespace"];
+					string out_name = output["name"];
+					auto col_lineage = extractor.ExtractOutputColumnLineage(*plan, out_ns, out_name);
+					if (!col_lineage.empty()) {
+						builder.AddOutputDatasetFacet_ColumnLineage(out_ns, out_name, col_lineage);
+					}
+				}
+			}
+		}
+	} catch (std::exception &e) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Column lineage extraction failed: " + string(e.what()));
+		}
+	} catch (...) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Column lineage extraction failed (unknown error)");
+		}
+	}
 
 	// ===== Check for parent run context from environment =====
 	const char *parent_run_id_env = std::getenv("OPENLINEAGE_PARENT_RUN_ID");

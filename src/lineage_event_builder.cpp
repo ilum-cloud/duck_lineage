@@ -6,6 +6,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "lineage_event_builder.hpp"
+#include "column_lineage_extractor.hpp"
 #include "lineage_utils.hpp"
 #include <stdexcept>
 
@@ -29,6 +30,7 @@ constexpr const char *LineageEventBuilder::CATALOG_FACET_SCHEMA;
 constexpr const char *LineageEventBuilder::LIFECYCLE_STATE_CHANGE_SCHEMA;
 constexpr const char *LineageEventBuilder::DATASET_TYPE_FACET_SCHEMA;
 constexpr const char *LineageEventBuilder::SYMLINKS_FACET_SCHEMA;
+constexpr const char *LineageEventBuilder::COLUMN_LINEAGE_FACET_SCHEMA;
 
 //===--------------------------------------------------------------------===//
 // Factory Methods
@@ -582,6 +584,44 @@ LineageEventBuilder &LineageEventBuilder::AddOutputDatasetFacet_LifecycleStateCh
 			}
 
 			output["facets"]["lifecycleStateChange"] = lifecycle_facet;
+			break;
+		}
+	}
+
+	return *this;
+}
+
+LineageEventBuilder &
+LineageEventBuilder::AddOutputDatasetFacet_ColumnLineage(const std::string &dataset_namespace,
+                                                         const std::string &dataset_name,
+                                                         const std::vector<ColumnLineageField> &column_lineage) {
+	// Find the output dataset to add the facet to
+	if (!event_json.contains("outputs") || event_json["outputs"].empty()) {
+		return *this;
+	}
+
+	for (auto &output : event_json["outputs"]) {
+		if (output["namespace"] == dataset_namespace && output["name"] == dataset_name) {
+			// Ensure facets object exists
+			if (!output.contains("facets")) {
+				output["facets"] = json::object();
+			}
+
+			// Build the columnLineage facet
+			json fields = json::object();
+			for (const auto &field : column_lineage) {
+				json input_fields = json::array();
+				for (const auto &src : field.input_fields) {
+					input_fields.push_back(
+					    {{"namespace", src.dataset_namespace}, {"name", src.dataset_name}, {"field", src.column_name}});
+				}
+
+				fields[field.output_column_name] = {{"inputFields", input_fields},
+				                                    {"transformationType", field.transformation_type}};
+			}
+
+			output["facets"]["columnLineage"] = {
+			    {"_producer", SQL_FACET_PRODUCER}, {"_schemaURL", COLUMN_LINEAGE_FACET_SCHEMA}, {"fields", fields}};
 			break;
 		}
 	}
