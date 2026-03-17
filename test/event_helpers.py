@@ -433,6 +433,23 @@ def assert_output_has_column_lineage(output, expected_fields):
         )
 
 
+def get_column_lineage_from_complete_events(events, output_name_contains=None):
+    """Find columnLineage facet from the most recent COMPLETE event's output."""
+    complete = find_complete_events(events)
+    assert complete, "No COMPLETE events found"
+
+    for event in reversed(complete):
+        for output in get_outputs(event):
+            if output_name_contains and output_name_contains.lower() not in (output.get("name") or "").lower():
+                continue
+            facets = get_facets(output)
+            cl = facets.get("columnLineage")
+            if cl:
+                return cl, output
+
+    return None, None
+
+
 def assert_column_lineage_field_has_source(col_lineage_facet, output_col, source_table_contains, source_col):
     """Validate a specific output column in the columnLineage facet traces to a specific source.
 

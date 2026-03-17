@@ -113,6 +113,34 @@ def marquez_client(marquez_url):
 
 
 @pytest.fixture
+def col_conn(duckdb_with_extension):
+    """Connection with sample tables for column lineage tests."""
+    conn = duckdb_with_extension
+    conn.execute(
+        """
+        CREATE TABLE source_a (
+            id INTEGER,
+            name VARCHAR,
+            value DECIMAL(10,2)
+        )
+    """
+    )
+    conn.execute("INSERT INTO source_a VALUES (1, 'Alice', 100.0), (2, 'Bob', 200.0)")
+
+    conn.execute(
+        """
+        CREATE TABLE source_b (
+            id INTEGER,
+            category VARCHAR,
+            score DOUBLE
+        )
+    """
+    )
+    conn.execute("INSERT INTO source_b VALUES (1, 'X', 0.5), (2, 'Y', 0.8)")
+    return conn
+
+
+@pytest.fixture
 def sample_table(duckdb_with_extension):
     """Create a sample table for testing."""
     conn = duckdb_with_extension
