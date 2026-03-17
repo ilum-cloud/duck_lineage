@@ -13,7 +13,9 @@ This extension currently implements the following OpenLineage capabilities:
 - **Automatic events:** Emits START, COMPLETE and FAIL events for each query execution.
 - **Dataset detection:** Extracts input and output datasets from query plans (tables, CREATE/INSERT/UPDATE/DELETE/COPY, basic file table functions).
 - **Schema capture:** Records dataset schema (column names and types) as a dataset facet.
-- **Facets:** Job `sql` facet, run `parent` facet (via OPENLINEAGE*PARENT*\* env vars), `processing_engine`, `dataSource` and `catalog` facets, lifecycle change facets (CREATE/DROP/ALTER/OVERWRITE/RENAME/TRUNCATE), and basic `outputStatistics` (row count).
+- **Column-level lineage:** Emits the OpenLineage `columnLineage` dataset facet on output datasets, tracking which input columns flow into each output column and whether the transformation is direct or indirect. Supports column refs, expressions, aliases, CAST, star expansion, JOINs, aggregation, UNION/INTERSECT/EXCEPT, window functions, CTAS, INSERT INTO SELECT, file scans (CSV/Parquet), PIVOT, and UNNEST.
+- **Facets:** Job `sql` facet, run `parent` facet (via OPENLINEAGE_PARENT\* env vars), `processing_engine`, `dataSource` and `catalog` facets, lifecycle change facets (CREATE/DROP/ALTER/OVERWRITE/RENAME/TRUNCATE), and basic `outputStatistics` (row count).
+- **DuckLake support:** Works with [DuckLake](https://github.com/duckdb/ducklake) catalogs. For DuckLake with external storage (S3, local path), the dataset namespace is automatically resolved from the DuckLake DATA_PATH.
 - **Asynchronous delivery:** Background HTTP client with configurable OpenLineage URL, API key, retries, queueing and debug logging.
 
 > Note: This extension works with both direct SQL execution and PreparedStatements (used by embedded drivers like Java JDBC and Python SQLAlchemy). When a query is executed via PreparedStatement, DuckDB does not expose the original SQL string to the optimizer. In this case, the extension still captures full lineage (inputs, outputs, schemas, facets), but view reference detection is unavailable — tables accessed through views will appear as direct inputs rather than being grouped under their view. The SQL job facet is also omitted when the original query string is not available.
@@ -25,7 +27,9 @@ The fastest way to see Duck Lineage in action is the quickstart demo. It starts 
 ```sh
 ./test/demo.sh
 ```
+
 or
+
 ```sh
 make demo
 ```
@@ -36,12 +40,11 @@ Then open http://localhost:3000 to explore the lineage graph. When you're done, 
 
 ## Quick Start
 
-> Note: This extension is not yet available in the official DuckDB community extension repository. You will need to build it from source (or download from GitHub Actions artifacts).
-
-The first step is to load the extension in DuckDB:
+The first step is to load the extension in DuckDB from the community extension repository:
 
 ```sql
-LOAD 'build/release/extension/duck_lineage/duck_lineage.duckdb_extension';
+INSTALL duck_lineage FROM community;
+LOAD duck_lineage;
 ```
 
 Next, configure the OpenLineage backend URL (e.g., Marquez):
