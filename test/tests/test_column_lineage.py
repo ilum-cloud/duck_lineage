@@ -253,16 +253,14 @@ def test_insert_select_column_lineage(col_conn, marquez_client):
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
     cl, output = get_column_lineage_from_complete_events(events, "insert_target")
 
-    # Column lineage may or may not be present for INSERT depending on plan structure
-    # If present, validate it
-    if cl is not None:
-        assert_output_has_column_lineage(
-            output,
-            {
-                "id": ["id"],
-                "name": ["name"],
-            },
-        )
+    assert cl is not None, "columnLineage facet should be present for INSERT...SELECT"
+    assert_output_has_column_lineage(
+        output,
+        {
+            "id": ["id"],
+            "name": ["name"],
+        },
+    )
 
 
 # ── Test: Facet structure validation ─────────────────────────────────────
