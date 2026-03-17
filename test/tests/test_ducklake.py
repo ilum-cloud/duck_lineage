@@ -80,14 +80,16 @@ def test_ducklake_dataset_facets(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create a table in DuckLake
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.customers (
             id INTEGER,
             name VARCHAR,
             email VARCHAR,
             created_date DATE
         )
-    """)
+    """
+    )
 
     # Get the dataset from Marquez
     dataset_name = "ducklake_db.main.customers"
@@ -147,20 +149,24 @@ def test_ducklake_insert_job_lineage(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create and populate a table
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.products (
             id INTEGER,
             product_name VARCHAR,
             price DECIMAL(10,2)
         )
-    """)
+    """
+    )
 
     # Execute INSERT
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO ducklake_db.products VALUES
             (1, 'Laptop', 999.99),
             (2, 'Mouse', 29.99)
-    """)
+    """
+    )
 
     # Verify data was inserted
     result = conn.execute("SELECT COUNT(*) FROM ducklake_db.products").fetchone()
@@ -192,26 +198,32 @@ def test_ducklake_select_job_with_inputs(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create source data
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.orders (
             id INTEGER,
             customer_id INTEGER,
             total_amount DECIMAL(10,2)
         )
-    """)
+    """
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO ducklake_db.orders VALUES
             (1, 100, 150.00),
             (2, 101, 250.50)
-    """)
+    """
+    )
 
     # Run a SELECT query
-    conn.execute("""
+    conn.execute(
+        """
         SELECT customer_id, SUM(total_amount) as total
         FROM ducklake_db.orders
         GROUP BY customer_id
-    """)
+    """
+    )
 
     # Verify the source dataset exists and is tracked in Marquez
     dataset = marquez_client.wait_for_dataset_with_facets(
@@ -239,23 +251,28 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez
     namespace = ducklake_ns
 
     # Create source table
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.raw_sales (
             sale_id INTEGER,
             product VARCHAR,
             amount DECIMAL(10,2),
             region VARCHAR
         )
-    """)
+    """
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO ducklake_db.raw_sales VALUES
             (1, 'Widget', 100.00, 'North'),
             (2, 'Gadget', 150.00, 'South')
-    """)
+    """
+    )
 
     # Create a summary table using CTAS
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.regional_sales AS
         SELECT
             region,
@@ -263,7 +280,8 @@ def test_ducklake_ctas_lineage_with_inputs_outputs(duckdb_with_ducklake, marquez
             SUM(amount) as total_amount
         FROM ducklake_db.raw_sales
         GROUP BY region
-    """)
+    """
+    )
 
     # Verify the new table was created
     result = conn.execute("SELECT COUNT(*) FROM ducklake_db.regional_sales").fetchone()
@@ -305,35 +323,41 @@ def test_ducklake_cross_db_query_lineage(duckdb_with_ducklake, marquez_client):
     user_namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
     # Create table in DuckLake
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.inventory (
             product_id INTEGER,
             quantity INTEGER
         )
-    """)
+    """
+    )
 
     conn.execute("INSERT INTO ducklake_db.inventory VALUES (1, 100), (2, 50)")
 
     # Create table in memory
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE local_suppliers (
             supplier_id INTEGER,
             product_id INTEGER,
             supplier_name VARCHAR
         )
-    """)
+    """
+    )
 
     conn.execute("INSERT INTO local_suppliers VALUES (1, 1, 'Acme Corp')")
 
     # Join across DuckLake and local tables
-    conn.execute("""
+    conn.execute(
+        """
         SELECT
             i.product_id,
             i.quantity,
             s.supplier_name
         FROM ducklake_db.inventory i
         JOIN local_suppliers s ON i.product_id = s.product_id
-    """)
+    """
+    )
 
     # Verify both datasets exist in Marquez with catalog facets
     # DuckLake datasets use the data path as namespace
@@ -374,7 +398,8 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
     namespace = ducklake_ns
 
     # Create source table
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.events (
             event_id INTEGER,
             event_type VARCHAR,
@@ -382,16 +407,20 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
             user_id INTEGER,
             metadata VARCHAR
         )
-    """)
+    """
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO ducklake_db.events VALUES
             (1, 'login', '2024-01-01 10:00:00', 100, 'ip=1.2.3.4'),
             (2, 'purchase', '2024-01-01 10:05:00', 101, 'ip=1.2.3.5')
-    """)
+    """
+    )
 
     # Create derived table with transformed fields
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.user_summaries AS
         SELECT
             user_id,
@@ -400,7 +429,8 @@ def test_ducklake_field_lineage(duckdb_with_ducklake, marquez_client):
             MAX(event_timestamp) as last_seen
         FROM ducklake_db.events
         GROUP BY user_id
-    """)
+    """
+    )
 
     # Get the derived dataset with fields populated
     summary_dataset = marquez_client.wait_for_dataset_with_fields(
@@ -440,12 +470,14 @@ def test_ducklake_datasource_facet_content(duckdb_with_ducklake, marquez_client)
     namespace = ducklake_ns
 
     # Create a table
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.test_table (
             id INTEGER,
             data VARCHAR
         )
-    """)
+    """
+    )
 
     # Get the dataset with dataSource facet
     dataset = marquez_client.wait_for_dataset_with_facets(
