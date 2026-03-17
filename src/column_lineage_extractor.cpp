@@ -817,9 +817,7 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	}
 	default: {
 		// Fallback: use ExpressionIterator to find column refs in unknown expression types
-		ExpressionIterator::EnumerateChildren(expr, [&](Expression &child) {
-			result.Merge(ResolveExpression(child));
-		});
+		ExpressionIterator::EnumerateChildren(expr, [&](Expression &child) { result.Merge(ResolveExpression(child)); });
 		break;
 	}
 	}
