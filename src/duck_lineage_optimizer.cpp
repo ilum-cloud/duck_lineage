@@ -1502,31 +1502,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// Solution: Parse the original SQL to find view references.
 	// NOTE: This only works when the original query string is available (not PreparedStatements).
 	unordered_set<string> referenced_views;
-
-	// Cheap heuristic: only parse if the query might reference views.
-	// Views are referenced via FROM/JOIN clauses. Very short queries (e.g. SELECT 1)
-	// cannot contain view references, so skip the full SQL re-parse for them.
-	// Case-insensitive search for FROM/JOIN keywords
-	auto contains_ci = [](const string &haystack, const char *needle, size_t needle_len) {
-		if (haystack.size() < needle_len)
-			return false;
-		for (size_t i = 0; i <= haystack.size() - needle_len; i++) {
-			bool match = true;
-			for (size_t j = 0; j < needle_len; j++) {
-				if (std::tolower(static_cast<unsigned char>(haystack[i + j])) != needle[j]) {
-					match = false;
-					break;
-				}
-			}
-			if (match)
-				return true;
-		}
-		return false;
-	};
-	bool might_have_views =
-	    has_original_query && query.size() > 20 && (contains_ci(query, "from", 4) || contains_ci(query, "join", 4));
-
-	if (might_have_views) {
+	if (has_original_query) {
 		Parser parser;
 		try {
 			parser.ParseQuery(query);
