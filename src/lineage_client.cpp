@@ -11,6 +11,7 @@
 #include <iostream>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 namespace duckdb {
 
@@ -321,29 +322,26 @@ void LineageClient::PostToBackend(const std::string &payload) {
 //===--------------------------------------------------------------------===//
 
 void LineageClient::BackgroundWorker() {
-	// Continuously process events until shutdown is requested
-	while (!shutdown_requested) {
-		std::string payload;
+	while (true) {
+		std::vector<std::string> batch;
 
-		// Wait for an event to become available or shutdown signal
 		{
 			std::unique_lock<std::mutex> lock(queue_mutex);
 			queue_cv.wait(lock, [this] { return !event_queue.empty() || shutdown_requested; });
 
-			// If shutdown requested and queue is empty, exit the worker
 			if (shutdown_requested && event_queue.empty()) {
 				return;
 			}
 
-			// Retrieve the next event from the queue
-			if (!event_queue.empty()) {
-				payload = std::move(event_queue.front());
+			// Drain all available events into a local batch
+			while (!event_queue.empty()) {
+				batch.push_back(std::move(event_queue.front()));
 				event_queue.pop();
 			}
 		}
 
-		// Send the event to the backend (outside the lock)
-		if (!payload.empty()) {
+		// Send all events outside the lock
+		for (auto &payload : batch) {
 			PostToBackend(payload);
 		}
 	}

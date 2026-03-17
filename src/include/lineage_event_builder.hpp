@@ -18,8 +18,9 @@ namespace duckdb {
 
 using json = nlohmann::json;
 
-// Forward declaration
+// Forward declarations
 struct CatalogInfo;
+struct ColumnLineageField;
 
 /// @class LineageEventBuilder
 /// @brief Factory class for constructing OpenLineage JSON events.
@@ -246,6 +247,15 @@ public:
 	                                                       const std::string &dataset_type,
 	                                                       const std::string &sub_type = "");
 
+	/// @brief Add columnLineage facet to an output dataset
+	/// @param dataset_namespace Dataset namespace
+	/// @param dataset_name Dataset name
+	/// @param column_lineage Vector of ColumnLineageField entries
+	/// @return Reference to this builder for chaining
+	LineageEventBuilder &AddOutputDatasetFacet_ColumnLineage(const std::string &dataset_namespace,
+	                                                         const std::string &dataset_name,
+	                                                         const std::vector<ColumnLineageField> &column_lineage);
+
 	/// @brief Add an input dataset with DataSource and Catalog facets
 	/// @param namespace_ Dataset namespace
 	/// @param name Dataset name
@@ -300,6 +310,20 @@ public:
 	static json CreateSchemaField(const std::string &field_name, const std::string &field_type);
 
 	//===--------------------------------------------------------------------===//
+	// Accessors
+	//===--------------------------------------------------------------------===//
+
+	/// @brief Reference to an output dataset (namespace + name) without building full JSON
+	struct DatasetRef {
+		std::string namespace_;
+		std::string name;
+	};
+
+	/// @brief Get output dataset references without calling Build()
+	/// @return Vector of namespace+name pairs for all output datasets
+	std::vector<DatasetRef> GetOutputDatasets() const;
+
+	//===--------------------------------------------------------------------===//
 	// Build
 	//===--------------------------------------------------------------------===//
 
@@ -328,10 +352,10 @@ private:
 	bool has_job = false;
 
 	// Default constants
-	static constexpr const char *DEFAULT_PRODUCER = "https://github.com/Ilum/duckdb-openlineage";
+	static constexpr const char *DEFAULT_PRODUCER = "https://github.com/ilum-cloud/duck_lineage";
 	static constexpr const char *DEFAULT_SCHEMA_URL =
 	    "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent";
-	static constexpr const char *SQL_FACET_PRODUCER = "https://github.com/Ilum/duckdb-openlineage";
+	static constexpr const char *SQL_FACET_PRODUCER = "https://github.com/ilum-cloud/duck_lineage";
 	static constexpr const char *SQL_FACET_SCHEMA = "https://openlineage.io/spec/job/sql/1-0-0.json";
 	static constexpr const char *PARENT_FACET_SCHEMA = "https://openlineage.io/spec/facets/1-0-0/ParentRunFacet.json";
 	static constexpr const char *ERROR_FACET_SCHEMA =
@@ -352,6 +376,8 @@ private:
 	    "https://openlineage.io/spec/facets/1-0-0/LifecycleStateChangeDatasetFacet.json";
 	static constexpr const char *DATASET_TYPE_FACET_SCHEMA =
 	    "https://openlineage.io/spec/facets/1-0-0/DatasetTypeDatasetFacet.json";
+	static constexpr const char *COLUMN_LINEAGE_FACET_SCHEMA =
+	    "https://openlineage.io/spec/facets/1-1-1/ColumnLineageDatasetFacet.json";
 };
 
 } // namespace duckdb

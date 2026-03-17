@@ -18,7 +18,7 @@ from event_helpers import (
 @pytest.mark.integration
 def test_invalid_url_configuration(extension_path):
     """Test behavior when setting an invalid OpenLineage URL."""
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
     conn.execute(f"LOAD '{extension_path}'")
 
     # These should not crash, but may log warnings
@@ -55,7 +55,7 @@ def test_malformed_query_handling(duckdb_with_extension):
 @pytest.mark.integration
 def test_empty_namespace(extension_path, marquez_api_url):
     """Test behavior with empty namespace."""
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
     conn.execute(f"LOAD '{extension_path}'")
     conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
     conn.execute("SET duck_lineage_namespace = ''")
@@ -173,7 +173,7 @@ def test_concurrent_connections(extension_path, marquez_api_url, marquez_client)
 
     connections = []
     for _ in range(NUM_CONNECTIONS):
-        conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+        conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
         conn.execute(f"LOAD '{extension_path}'")
         conn.execute(f"SET duck_lineage_url = '{marquez_api_url}/lineage'")
         conn.execute(f"SET duck_lineage_namespace = '{namespace}'")
@@ -240,7 +240,10 @@ def test_null_values_handling(lineage_connection, marquez_client):
     source = marquez_client.wait_for_dataset_with_fields(namespace, "memory.main.nullable_data")
     assert source is not None, "Source dataset 'nullable_data' should be registered in Marquez."
     assert_valid_dataset(source, namespace, "nullable_data")
-    assert_dataset_has_fields(source, {"id": "INTEGER", "name": "VARCHAR", "value": "INTEGER", "metadata": "VARCHAR"})
+    assert_dataset_has_fields(
+        source,
+        {"id": "INTEGER", "name": "VARCHAR", "value": "INTEGER", "metadata": "VARCHAR"},
+    )
 
     # Validate derived dataset
     derived = marquez_client.wait_for_dataset_with_fields(namespace, "memory.main.filtered_data")
@@ -258,7 +261,7 @@ def test_configuration_persistence(extension_path, marquez_api_url, marquez_clie
 
     namespace = f"test_persist_{uuid.uuid4().hex[:8]}"
 
-    conn = duckdb.connect(":memory:", config={'allow_unsigned_extensions': 'true'})
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
     conn.execute(f"LOAD '{extension_path}'")
 
     test_url = f"{marquez_api_url}/lineage"

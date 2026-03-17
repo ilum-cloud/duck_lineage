@@ -18,7 +18,6 @@ Note: Tests will skip if DuckLake extension is not available.
 import pytest
 from pathlib import Path
 
-
 DUCKLAKE_NAMESPACE = "ducklake"
 
 

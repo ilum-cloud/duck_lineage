@@ -10,7 +10,7 @@ from time import sleep
 
 # ── Constants matching C++ lineage_event_builder.hpp:331-354 ───────────
 
-PRODUCER = "https://github.com/Ilum/duckdb-openlineage"
+PRODUCER = "https://github.com/ilum-cloud/duck_lineage"
 SCHEMA_URL = "https://openlineage.io/spec/2-0-2/OpenLineage.json#/$defs/RunEvent"
 
 FACET_SCHEMAS = {
@@ -25,7 +25,10 @@ FACET_SCHEMAS = {
     "symlinks": "https://openlineage.io/spec/facets/1-0-1/SymlinksDatasetFacet.json",
     "errorMessage": "https://openlineage.io/spec/facets/1-0-0/ErrorMessageRunFacet.json",
     "parent": "https://openlineage.io/spec/facets/1-0-0/ParentRunFacet.json",
+    "columnLineage": "https://openlineage.io/spec/facets/1-1-1/ColumnLineageDatasetFacet.json",
 }
+
+TEST_NAMESPACE = "duckdb_test"
 
 VALID_EVENT_TYPES = {"START", "COMPLETE", "FAIL"}
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
@@ -55,10 +58,10 @@ def get_run_facets(event):
 # ── Query + poll ───────────────────────────────────────────────────────
 
 
-def run_and_wait(conn, marquez_client, namespace, queries, min_events, timeout=30):
+def run_and_wait(conn, marquez_client, namespace, queries, min_events, timeout=30, initial_delay=2):
     for q in queries:
         conn.execute(q)
-    sleep(2)
+    sleep(initial_delay)
     return marquez_client.wait_for_events(namespace, min_events, timeout_seconds=timeout)
 
 
@@ -128,9 +131,9 @@ def assert_valid_output(output, expected_namespace, expected_name_contains=None)
             expected_name_contains.lower() in name.lower()
         ), f"Output name {name!r} should contain {expected_name_contains!r}"
 
-    # Validate all facets on this output
+    # Validate facets produced by our extension (skip Marquez-added facets)
     for facet_name, facet in get_facets(output).items():
-        if isinstance(facet, dict) and "_producer" in facet:
+        if isinstance(facet, dict) and facet.get("_producer") == PRODUCER:
             assert_valid_facet(facet, facet_name)
 
 
@@ -260,9 +263,9 @@ def assert_valid_dataset(dataset, expected_namespace, expected_name_contains=Non
     # Version
     assert dataset.get("currentVersion"), "Dataset currentVersion should not be empty"
 
-    # Validate all facets have correct _producer/_schemaURL
+    # Validate facets produced by our extension (skip Marquez-added facets)
     for facet_name, facet in get_facets(dataset).items():
-        if isinstance(facet, dict) and "_producer" in facet:
+        if isinstance(facet, dict) and facet.get("_producer") == PRODUCER:
             assert_valid_facet(facet, facet_name)
 
 
@@ -330,9 +333,9 @@ def assert_valid_job(job, expected_namespace):
     assert job.get("createdAt"), "Job createdAt should not be empty"
     assert job.get("updatedAt"), "Job updatedAt should not be empty"
 
-    # Validate job facets
+    # Validate facets produced by our extension (skip Marquez-added facets)
     for facet_name, facet in get_facets(job).items():
-        if isinstance(facet, dict) and "_producer" in facet:
+        if isinstance(facet, dict) and facet.get("_producer") == PRODUCER:
             assert_valid_facet(facet, facet_name)
 
 
@@ -381,3 +384,153 @@ def assert_job_has_sql_facet(job, query_contains):
     assert_valid_facet(sql, "sql")
     query = sql.get("query") or ""
     assert query_contains.lower() in query.lower(), f"Job sql.query {query!r} should contain {query_contains!r}"
+
+
+# ── Column Lineage Helpers ─────────────────────────────────────────────
+
+
+def assert_output_has_column_lineage(output, expected_fields):
+    """Validate columnLineage facet exists on an output dataset with expected field mappings.
+
+    expected_fields: dict mapping output column name (case-insensitive) to a list of
+    expected source column names (case-insensitive). Each source is checked as a substring
+    of the source field name.
+
+    Example:
+        assert_output_has_column_lineage(output, {
+            "name": ["name"],          # output col 'name' comes from input col 'name'
+            "sum_col": ["a", "b"],     # output col 'sum_col' comes from input cols 'a' and 'b'
+        })
+    """
+    facets = get_facets(output)
+    col_lineage = facets.get("columnLineage")
+    assert col_lineage, (
+        f"Output {output.get('name')!r} missing columnLineage facet. " f"Available facets: {list(facets.keys())}"
+    )
+    assert_valid_facet(col_lineage, "columnLineage")
+
+    fields = col_lineage.get("fields") or {}
+    assert isinstance(fields, dict), f"columnLineage.fields should be an object, got {type(fields).__name__}"
+
+    # Build a case-insensitive lookup
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    for out_col, expected_sources in expected_fields.items():
+        field_entry = fields_lower.get(out_col.lower())
+        assert field_entry, f"columnLineage missing field {out_col!r}. " f"Available fields: {list(fields.keys())}"
+
+        input_fields = field_entry.get("inputFields") or []
+        source_col_names = [f.get("field", "").lower() for f in input_fields]
+
+        for expected_src in expected_sources:
+            assert any(expected_src.lower() in s for s in source_col_names), (
+                f"Field {out_col!r} missing source column containing {expected_src!r}. "
+                f"Found sources: {source_col_names}"
+            )
+
+        # Validate transformation type is present
+        assert "transformationType" in field_entry, f"Field {out_col!r} missing transformationType"
+        assert field_entry["transformationType"] in ("DIRECT", "INDIRECT"), (
+            f"Field {out_col!r} has invalid transformationType: " f"{field_entry['transformationType']!r}"
+        )
+
+
+def get_column_lineage_from_complete_events(events, output_name_contains=None):
+    """Find columnLineage facet from the most recent COMPLETE event's output."""
+    complete = find_complete_events(events)
+    assert complete, "No COMPLETE events found"
+
+    for event in reversed(complete):
+        for output in get_outputs(event):
+            if output_name_contains and output_name_contains.lower() not in (output.get("name") or "").lower():
+                continue
+            facets = get_facets(output)
+            cl = facets.get("columnLineage")
+            if cl:
+                return cl, output
+
+    return None, None
+
+
+def assert_column_lineage_field_has_source(col_lineage_facet, output_col, source_table_contains, source_col):
+    """Validate a specific output column in the columnLineage facet traces to a specific source.
+
+    col_lineage_facet: the columnLineage facet dict
+    output_col: the output column name to check
+    source_table_contains: substring that should appear in the source dataset name
+    source_col: the expected source column name (case-insensitive match)
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    assert field_entry, f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
+
+    input_fields = field_entry.get("inputFields") or []
+    found = False
+    for inp in input_fields:
+        if (
+            source_table_contains.lower() in (inp.get("name") or "").lower()
+            and source_col.lower() == (inp.get("field") or "").lower()
+        ):
+            found = True
+            break
+
+    assert found, (
+        f"Field {output_col!r} should trace to {source_table_contains!r}.{source_col!r}. "
+        f"Found: {[(f.get('name'), f.get('field')) for f in input_fields]}"
+    )
+
+
+def assert_transformation_type(col_lineage_facet, output_col, expected_type):
+    """Validate transformationType is exactly 'DIRECT' or 'INDIRECT' for a given output column.
+
+    Case-insensitive column name lookup.
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    assert field_entry, f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
+
+    actual_type = field_entry.get("transformationType")
+    assert actual_type == expected_type, (
+        f"Field {output_col!r} transformationType mismatch: " f"{actual_type!r} != {expected_type!r}"
+    )
+
+
+def assert_field_input_count(col_lineage_facet, output_col, expected_count):
+    """Validate the exact number of inputFields for an output column.
+
+    Catches spurious or missing lineage entries.
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    assert field_entry, f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
+
+    input_fields = field_entry.get("inputFields") or []
+    assert len(input_fields) == expected_count, (
+        f"Field {output_col!r} expected {expected_count} inputFields, "
+        f"got {len(input_fields)}: {[(f.get('name'), f.get('field')) for f in input_fields]}"
+    )
+
+
+def assert_field_has_no_sources(col_lineage_facet, output_col):
+    """Validate an output column either doesn't appear in fields or has 0 inputFields.
+
+    For constants/literals that have no source columns.
+    """
+    fields = col_lineage_facet.get("fields") or {}
+    fields_lower = {k.lower(): v for k, v in fields.items()}
+
+    field_entry = fields_lower.get(output_col.lower())
+    if field_entry is None:
+        return  # Not in fields at all — passes
+
+    input_fields = field_entry.get("inputFields") or []
+    assert len(input_fields) == 0, (
+        f"Field {output_col!r} should have no sources, "
+        f"got {len(input_fields)}: {[(f.get('name'), f.get('field')) for f in input_fields]}"
+    )
