@@ -96,6 +96,8 @@ private:
 	void HandleAggregate(LogicalOperator &op);
 	void HandleSetOperation(LogicalOperator &op);
 	void HandleWindow(LogicalOperator &op);
+	void HandlePivot(LogicalOperator &op);
+	void HandleUnnest(LogicalOperator &op);
 	void HandleDefaultPassthrough(LogicalOperator &op);
 
 	/// @brief Resolve an expression tree to find all source columns it references.

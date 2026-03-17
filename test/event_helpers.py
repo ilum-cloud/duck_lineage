@@ -29,9 +29,7 @@ FACET_SCHEMAS = {
 }
 
 VALID_EVENT_TYPES = {"START", "COMPLETE", "FAIL"}
-UUID_RE = re.compile(
-    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE
-)
+UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.IGNORECASE)
 ISO_DATETIME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
 
 
@@ -62,31 +60,20 @@ def run_and_wait(conn, marquez_client, namespace, queries, min_events, timeout=3
     for q in queries:
         conn.execute(q)
     sleep(2)
-    return marquez_client.wait_for_events(
-        namespace, min_events, timeout_seconds=timeout
-    )
+    return marquez_client.wait_for_events(namespace, min_events, timeout_seconds=timeout)
 
 
 # ── Event filtering ────────────────────────────────────────────────────
 
 
 def find_events_by_job(events, job_name_contains):
-    return [
-        e
-        for e in events
-        if job_name_contains.upper() in ((e.get("job") or {}).get("name") or "").upper()
-    ]
+    return [e for e in events if job_name_contains.upper() in ((e.get("job") or {}).get("name") or "").upper()]
 
 
 def find_complete_events(events, job_name_contains=None):
     result = [e for e in events if e.get("eventType") == "COMPLETE"]
     if job_name_contains:
-        result = [
-            e
-            for e in result
-            if job_name_contains.upper()
-            in ((e.get("job") or {}).get("name") or "").upper()
-        ]
+        result = [e for e in result if job_name_contains.upper() in ((e.get("job") or {}).get("name") or "").upper()]
     return result
 
 
@@ -94,15 +81,11 @@ def find_complete_events(events, job_name_contains=None):
 
 
 def assert_valid_event(event, expected_namespace):
-    assert (
-        event.get("producer") == PRODUCER
-    ), f"Event producer mismatch: {event.get('producer')!r} != {PRODUCER!r}"
+    assert event.get("producer") == PRODUCER, f"Event producer mismatch: {event.get('producer')!r} != {PRODUCER!r}"
     assert (
         event.get("schemaURL") == SCHEMA_URL
     ), f"Event schemaURL mismatch: {event.get('schemaURL')!r} != {SCHEMA_URL!r}"
-    assert (
-        event.get("eventType") in VALID_EVENT_TYPES
-    ), f"Invalid eventType: {event.get('eventType')!r}"
+    assert event.get("eventType") in VALID_EVENT_TYPES, f"Invalid eventType: {event.get('eventType')!r}"
 
     event_time = event.get("eventTime") or ""
     assert ISO_DATETIME_RE.match(event_time), f"eventTime not ISO 8601: {event_time!r}"
@@ -179,9 +162,7 @@ def assert_output_has_schema(output, expected_fields):
     field_map = {f["name"].lower(): f["type"].upper() for f in fields}
 
     for name, type_substr in expected_fields.items():
-        assert (
-            name.lower() in field_map
-        ), f"Missing field {name!r} in schema. Fields: {field_map}"
+        assert name.lower() in field_map, f"Missing field {name!r} in schema. Fields: {field_map}"
         assert (
             type_substr.upper() in field_map[name.lower()]
         ), f"Field {name!r} type mismatch: {field_map[name.lower()]!r} doesn't contain {type_substr!r}"
@@ -296,9 +277,7 @@ def assert_dataset_has_fields(dataset, expected_fields):
 
     field_map = {f["name"].lower(): f["type"].upper() for f in fields}
     for name, type_substr in expected_fields.items():
-        assert (
-            name.lower() in field_map
-        ), f"Missing field {name!r} in dataset. Fields: {field_map}"
+        assert name.lower() in field_map, f"Missing field {name!r} in dataset. Fields: {field_map}"
         assert (
             type_substr.upper() in field_map[name.lower()]
         ), f"Field {name!r} type mismatch: {field_map[name.lower()]!r} doesn't contain {type_substr!r}"
@@ -311,9 +290,7 @@ def assert_dataset_has_facet(dataset, facet_name, expected_values=None):
     """
     facets = get_facets(dataset)
     facet = facets.get(facet_name)
-    assert (
-        facet
-    ), f"Dataset {dataset.get('name')!r} missing facet {facet_name!r}. Has: {list(facets.keys())}"
+    assert facet, f"Dataset {dataset.get('name')!r} missing facet {facet_name!r}. Has: {list(facets.keys())}"
     assert_valid_facet(facet, facet_name)
 
     if expected_values:
@@ -328,9 +305,7 @@ def assert_dataset_lifecycle(dataset, expected_state):
     assert (
         dataset.get("lastLifecycleState") == expected_state
     ), f"Dataset lastLifecycleState mismatch: {dataset.get('lastLifecycleState')!r} != {expected_state!r}"
-    assert_dataset_has_facet(
-        dataset, "lifecycleStateChange", {"lifecycleStateChange": expected_state}
-    )
+    assert_dataset_has_facet(dataset, "lifecycleStateChange", {"lifecycleStateChange": expected_state})
 
 
 # ── Deep validation: Marquez job objects ───────────────────────────────
@@ -350,9 +325,7 @@ def assert_valid_job(job, expected_namespace):
 
     name = job.get("name") or ""
     assert name, "Job name should not be empty"
-    assert (
-        job.get("type") == "BATCH"
-    ), f"Job type should be BATCH, got: {job.get('type')!r}"
+    assert job.get("type") == "BATCH", f"Job type should be BATCH, got: {job.get('type')!r}"
 
     # Timestamps
     assert job.get("createdAt"), "Job createdAt should not be empty"
@@ -397,9 +370,7 @@ def assert_job_run_completed(job):
     engine = run_facets.get("processing_engine")
     if engine:
         assert_valid_facet(engine, "processing_engine")
-        assert (
-            engine.get("name") == "DuckDB"
-        ), f"processing_engine.name should be DuckDB, got: {engine.get('name')!r}"
+        assert engine.get("name") == "DuckDB", f"processing_engine.name should be DuckDB, got: {engine.get('name')!r}"
         assert engine.get("version"), "processing_engine.version should not be empty"
 
 
@@ -410,9 +381,7 @@ def assert_job_has_sql_facet(job, query_contains):
     assert sql, f"Job {job.get('name')!r} missing sql facet"
     assert_valid_facet(sql, "sql")
     query = sql.get("query") or ""
-    assert (
-        query_contains.lower() in query.lower()
-    ), f"Job sql.query {query!r} should contain {query_contains!r}"
+    assert query_contains.lower() in query.lower(), f"Job sql.query {query!r} should contain {query_contains!r}"
 
 
 # ── Column Lineage Helpers ─────────────────────────────────────────────
@@ -434,25 +403,19 @@ def assert_output_has_column_lineage(output, expected_fields):
     facets = get_facets(output)
     col_lineage = facets.get("columnLineage")
     assert col_lineage, (
-        f"Output {output.get('name')!r} missing columnLineage facet. "
-        f"Available facets: {list(facets.keys())}"
+        f"Output {output.get('name')!r} missing columnLineage facet. " f"Available facets: {list(facets.keys())}"
     )
     assert_valid_facet(col_lineage, "columnLineage")
 
     fields = col_lineage.get("fields") or {}
-    assert isinstance(
-        fields, dict
-    ), f"columnLineage.fields should be an object, got {type(fields).__name__}"
+    assert isinstance(fields, dict), f"columnLineage.fields should be an object, got {type(fields).__name__}"
 
     # Build a case-insensitive lookup
     fields_lower = {k.lower(): v for k, v in fields.items()}
 
     for out_col, expected_sources in expected_fields.items():
         field_entry = fields_lower.get(out_col.lower())
-        assert field_entry, (
-            f"columnLineage missing field {out_col!r}. "
-            f"Available fields: {list(fields.keys())}"
-        )
+        assert field_entry, f"columnLineage missing field {out_col!r}. " f"Available fields: {list(fields.keys())}"
 
         input_fields = field_entry.get("inputFields") or []
         source_col_names = [f.get("field", "").lower() for f in input_fields]
@@ -464,18 +427,13 @@ def assert_output_has_column_lineage(output, expected_fields):
             )
 
         # Validate transformation type is present
-        assert (
-            "transformationType" in field_entry
-        ), f"Field {out_col!r} missing transformationType"
+        assert "transformationType" in field_entry, f"Field {out_col!r} missing transformationType"
         assert field_entry["transformationType"] in ("DIRECT", "INDIRECT"), (
-            f"Field {out_col!r} has invalid transformationType: "
-            f"{field_entry['transformationType']!r}"
+            f"Field {out_col!r} has invalid transformationType: " f"{field_entry['transformationType']!r}"
         )
 
 
-def assert_column_lineage_field_has_source(
-    col_lineage_facet, output_col, source_table_contains, source_col
-):
+def assert_column_lineage_field_has_source(col_lineage_facet, output_col, source_table_contains, source_col):
     """Validate a specific output column in the columnLineage facet traces to a specific source.
 
     col_lineage_facet: the columnLineage facet dict
@@ -487,10 +445,7 @@ def assert_column_lineage_field_has_source(
     fields_lower = {k.lower(): v for k, v in fields.items()}
 
     field_entry = fields_lower.get(output_col.lower())
-    assert field_entry, (
-        f"columnLineage missing field {output_col!r}. "
-        f"Available fields: {list(fields.keys())}"
-    )
+    assert field_entry, f"columnLineage missing field {output_col!r}. " f"Available fields: {list(fields.keys())}"
 
     input_fields = field_entry.get("inputFields") or []
     found = False
