@@ -47,7 +47,7 @@ def test_direct_passthrough_transformation_type(col_conn, marquez_client):
 
 @pytest.mark.integration
 def test_function_transformation_type(col_conn, marquez_client):
-    """UPPER(name), LOWER(name) -> both DIRECT (functions propagate child is_direct)."""
+    """UPPER(name), LOWER(name) -> both INDIRECT (scalar functions transform values)."""
     col_conn.execute(
         """
         CREATE TABLE ext_fn_type_out AS
@@ -60,8 +60,8 @@ def test_function_transformation_type(col_conn, marquez_client):
     cl, output = get_column_lineage_from_complete_events(events, "ext_fn_type_out")
 
     assert cl is not None, "columnLineage facet should be present"
-    assert_transformation_type(cl, "upper_name", "DIRECT")
-    assert_transformation_type(cl, "lower_name", "DIRECT")
+    assert_transformation_type(cl, "upper_name", "INDIRECT")
+    assert_transformation_type(cl, "lower_name", "INDIRECT")
 
 
 @pytest.mark.integration

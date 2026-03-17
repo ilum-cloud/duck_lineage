@@ -42,9 +42,20 @@ struct SourceColumnHash {
 };
 
 /// @brief Lineage information for a single column binding.
+/// NOTE: is_direct defaults to true so that && chaining works correctly during
+/// expression resolution (a chain of DIRECT children stays DIRECT). This is safe
+/// because results with zero sources are filtered out before being emitted.
 struct BindingLineage {
 	vector<SourceColumn> sources;
 	bool is_direct = true;
+
+	/// @brief Merge another lineage into this one (sources + is_direct).
+	void Merge(const BindingLineage &other) {
+		for (auto &src : other.sources) {
+			sources.push_back(src);
+		}
+		is_direct = is_direct && other.is_direct;
+	}
 };
 
 /// @brief Represents column lineage for a single output column.

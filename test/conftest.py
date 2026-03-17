@@ -16,7 +16,7 @@ from pathlib import Path
 
 from event_helpers import TEST_NAMESPACE
 
-from marquez import TestMarquezClient
+from marquez import MarquezTestClient
 
 
 @pytest.fixture(scope="session")
@@ -111,7 +111,7 @@ def clean_marquez_namespace():
 @pytest.fixture(scope="session")
 def marquez_client(marquez_url):
     """Marquez client for interacting with the Marquez API."""
-    return TestMarquezClient(marquez_url)
+    return MarquezTestClient(marquez_url)
 
 
 @pytest.fixture

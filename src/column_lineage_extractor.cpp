@@ -575,27 +575,17 @@ void ColumnLineageExtractor::HandleSetOperation(LogicalOperator &op) {
 	for (idx_t i = 0; i < my_bindings.size(); i++) {
 		BindingLineage merged;
 
-		// Add sources from left child
 		if (i < left_bindings.size()) {
-			auto left_key = left_bindings[i];
-			auto it = lineage_map.find(left_key);
+			auto it = lineage_map.find(left_bindings[i]);
 			if (it != lineage_map.end()) {
-				for (auto &src : it->second.sources) {
-					merged.sources.push_back(src);
-				}
-				merged.is_direct = merged.is_direct && it->second.is_direct;
+				merged.Merge(it->second);
 			}
 		}
 
-		// Add sources from right child
 		if (i < right_bindings.size()) {
-			auto right_key = right_bindings[i];
-			auto it = lineage_map.find(right_key);
+			auto it = lineage_map.find(right_bindings[i]);
 			if (it != lineage_map.end()) {
-				for (auto &src : it->second.sources) {
-					merged.sources.push_back(src);
-				}
-				merged.is_direct = merged.is_direct && it->second.is_direct;
+				merged.Merge(it->second);
 			}
 		}
 
@@ -711,13 +701,22 @@ void ColumnLineageExtractor::HandleUnnest(LogicalOperator &op) {
 }
 
 void ColumnLineageExtractor::HandleDefaultPassthrough(LogicalOperator &op) {
-	// Default: pass through child bindings unchanged.
+	// Default: pass through child bindings from children[0] unchanged.
 	// NOTE: For LOGICAL_MATERIALIZED_CTE, children[0] is the CTE definition which
 	// produces the bindings we need. This differs from GetOperatorColumnNames() which
 	// uses children[1] (the main query) for *names*. The asymmetry is intentional:
 	// bindings come from the CTE body, names come from the consumer.
+	//
+	// WARNING: Operators with non-standard child layouts that land here may produce
+	// incorrect lineage. If you add a new operator type, consider adding an explicit
+	// handler in TraversePlan instead.
 	if (op.children.empty()) {
 		return;
+	}
+
+	if (LineageClient::Get().IsDebug()) {
+		Printer::Print("OpenLineage Debug: HandleDefaultPassthrough for operator type " +
+		               to_string(static_cast<int>(op.type)));
 	}
 
 	auto my_bindings = op.GetColumnBindings();
@@ -750,23 +749,19 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 		break;
 	}
 	case ExpressionClass::BOUND_FUNCTION: {
+		// Scalar functions (UPPER, LOWER, CONCAT, etc.) are INDIRECT: they transform
+		// column values rather than passing them through unchanged.
 		auto &func = expr.Cast<BoundFunctionExpression>();
 		for (auto &child : func.children) {
-			auto child_lineage = ResolveExpression(*child);
-			for (auto &src : child_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && child_lineage.is_direct;
+			result.Merge(ResolveExpression(*child));
 		}
+		result.is_direct = false;
 		break;
 	}
 	case ExpressionClass::BOUND_AGGREGATE: {
 		auto &agg = expr.Cast<BoundAggregateExpression>();
 		for (auto &child : agg.children) {
-			auto child_lineage = ResolveExpression(*child);
-			for (auto &src : child_lineage.sources) {
-				result.sources.push_back(src);
-			}
+			result.Merge(ResolveExpression(*child));
 		}
 		result.is_direct = false; // aggregation fundamentally transforms data
 		break;
@@ -779,64 +774,35 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	case ExpressionClass::BOUND_OPERATOR: {
 		auto &oper = expr.Cast<BoundOperatorExpression>();
 		for (auto &child : oper.children) {
-			auto child_lineage = ResolveExpression(*child);
-			for (auto &src : child_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && child_lineage.is_direct;
+			result.Merge(ResolveExpression(*child));
 		}
 		break;
 	}
 	case ExpressionClass::BOUND_CASE: {
 		auto &case_expr = expr.Cast<BoundCaseExpression>();
 		for (auto &check : case_expr.case_checks) {
-			auto when_lineage = ResolveExpression(*check.when_expr);
-			for (auto &src : when_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && when_lineage.is_direct;
-			auto then_lineage = ResolveExpression(*check.then_expr);
-			for (auto &src : then_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && then_lineage.is_direct;
+			result.Merge(ResolveExpression(*check.when_expr));
+			result.Merge(ResolveExpression(*check.then_expr));
 		}
 		if (case_expr.else_expr) {
-			auto else_lineage = ResolveExpression(*case_expr.else_expr);
-			for (auto &src : else_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && else_lineage.is_direct;
+			result.Merge(ResolveExpression(*case_expr.else_expr));
 		}
 		break;
 	}
 	case ExpressionClass::BOUND_WINDOW: {
-		// Window functions propagate is_direct from their children, unlike aggregates
-		// (which are always INDIRECT). This is a deliberate design choice: window functions
-		// compute over a set of rows but return one value per row, preserving the row-level
-		// relationship. A standalone ROW_NUMBER() OVER(...) is thus marked DIRECT.
+		// Window functions are INDIRECT: they compute values across row sets (even
+		// ROW_NUMBER() produces synthetic ordinals, not the column values themselves).
 		auto &window_expr = expr.Cast<BoundWindowExpression>();
 		for (auto &child : window_expr.children) {
-			auto child_lineage = ResolveExpression(*child);
-			for (auto &src : child_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && child_lineage.is_direct;
+			result.Merge(ResolveExpression(*child));
 		}
 		for (auto &partition : window_expr.partitions) {
-			auto part_lineage = ResolveExpression(*partition);
-			for (auto &src : part_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && part_lineage.is_direct;
+			result.Merge(ResolveExpression(*partition));
 		}
 		for (auto &order : window_expr.orders) {
-			auto order_lineage = ResolveExpression(*order.expression);
-			for (auto &src : order_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && order_lineage.is_direct;
+			result.Merge(ResolveExpression(*order.expression));
 		}
+		result.is_direct = false;
 		break;
 	}
 	case ExpressionClass::BOUND_UNNEST: {
@@ -852,11 +818,7 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	default: {
 		// Fallback: use ExpressionIterator to find column refs in unknown expression types
 		ExpressionIterator::EnumerateChildren(expr, [&](Expression &child) {
-			auto child_lineage = ResolveExpression(child);
-			for (auto &src : child_lineage.sources) {
-				result.sources.push_back(src);
-			}
-			result.is_direct = result.is_direct && child_lineage.is_direct;
+			result.Merge(ResolveExpression(child));
 		});
 		break;
 	}

@@ -4,7 +4,7 @@ from time import sleep, time
 import requests
 
 
-class TestMarquezClient:
+class MarquezTestClient:
     def __init__(self, url: str, retries: int = 6) -> None:
         self.url = url
         self.retries = retries
