@@ -378,7 +378,8 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 				}
 			} catch (...) {
 				if (LineageClient::Get().IsDebug()) {
-					Printer::Print("OpenLineage Debug: Failed to extract file path from MultiFileBindData for column lineage");
+					Printer::Print(
+					    "OpenLineage Debug: Failed to extract file path from MultiFileBindData for column lineage");
 				}
 			}
 		}
