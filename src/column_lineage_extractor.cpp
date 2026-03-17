@@ -716,15 +716,8 @@ void ColumnLineageExtractor::HandleDefaultPassthrough(LogicalOperator &op) {
 		return;
 	}
 
-	// For LOGICAL_MATERIALIZED_CTE, children[1] is the main query (output),
-	// children[0] is the CTE definition.
-	idx_t child_idx = 0;
-	if (op.type == LogicalOperatorType::LOGICAL_MATERIALIZED_CTE && op.children.size() > 1) {
-		child_idx = 1;
-	}
-
 	auto my_bindings = op.GetColumnBindings();
-	auto child_bindings = op.children[child_idx]->GetColumnBindings();
+	auto child_bindings = op.children[0]->GetColumnBindings();
 
 	for (idx_t i = 0; i < my_bindings.size() && i < child_bindings.size(); i++) {
 		auto child_key = PackBinding(child_bindings[i]);
