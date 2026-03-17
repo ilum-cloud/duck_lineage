@@ -114,7 +114,7 @@ def test_function_transformation_type(col_conn, marquez_client):
 
 @pytest.mark.integration
 def test_aggregate_transformation_type(col_conn, marquez_client):
-    """SUM(value) GROUP BY name -> name DIRECT, total DIRECT."""
+    """SUM(value) GROUP BY name -> name DIRECT, total INDIRECT."""
     col_conn.execute(
         """
         CREATE TABLE ext_agg_type_out AS
@@ -128,7 +128,7 @@ def test_aggregate_transformation_type(col_conn, marquez_client):
 
     assert cl is not None, "columnLineage facet should be present"
     assert_transformation_type(cl, "name", "DIRECT")
-    assert_transformation_type(cl, "total", "DIRECT")
+    assert_transformation_type(cl, "total", "INDIRECT")
 
 
 @pytest.mark.integration
@@ -201,8 +201,8 @@ def test_pivot_transformation_type(col_conn, marquez_client):
     assert_transformation_type(cl, "city", "DIRECT")
 
     # DuckDB rewrites PIVOT as AGGREGATE + PROJECTION, so pivoted columns
-    # go through HandleAggregate (which preserves default DIRECT) rather than
-    # HandlePivot (which sets INDIRECT). Verify they trace to revenue.
+    # go through HandleAggregate (which marks aggregates as INDIRECT).
+    # Verify they trace to revenue.
     fields = cl.get("fields") or {}
     for field_name, field_entry in fields.items():
         if field_name.lower() != "city":

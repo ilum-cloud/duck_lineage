@@ -757,8 +757,8 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 			for (auto &src : child_lineage.sources) {
 				result.sources.push_back(src);
 			}
-			result.is_direct = result.is_direct && child_lineage.is_direct;
 		}
+		result.is_direct = false; // aggregation fundamentally transforms data
 		break;
 	}
 	case ExpressionClass::BOUND_CAST: {
