@@ -371,7 +371,7 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 			try {
 				auto *multi_file_data = dynamic_cast<MultiFileBindData *>(get.bind_data.get());
 				if (multi_file_data && multi_file_data->file_list) {
-					auto file_paths = multi_file_data->file_list->GetPaths();
+					auto file_paths = multi_file_data->file_list->GetAllFiles();
 					if (!file_paths.empty()) {
 						dataset_name = file_paths[0].path;
 					}
@@ -564,28 +564,21 @@ void ColumnLineageExtractor::HandleAggregate(LogicalOperator &op) {
 void ColumnLineageExtractor::HandleSetOperation(LogicalOperator &op) {
 	auto my_bindings = op.GetColumnBindings();
 
-	if (op.children.size() < 2) {
+	if (op.children.empty()) {
 		return;
 	}
 
-	auto left_bindings = op.children[0]->GetColumnBindings();
-	auto right_bindings = op.children[1]->GetColumnBindings();
-
-	// For UNION/INTERSECT/EXCEPT, merge corresponding columns from both children
+	// For UNION/INTERSECT/EXCEPT, merge corresponding columns from all children
 	for (idx_t i = 0; i < my_bindings.size(); i++) {
 		BindingLineage merged;
 
-		if (i < left_bindings.size()) {
-			auto it = lineage_map.find(left_bindings[i]);
-			if (it != lineage_map.end()) {
-				merged.Merge(it->second);
-			}
-		}
-
-		if (i < right_bindings.size()) {
-			auto it = lineage_map.find(right_bindings[i]);
-			if (it != lineage_map.end()) {
-				merged.Merge(it->second);
+		for (idx_t c = 0; c < op.children.size(); c++) {
+			auto child_bindings = op.children[c]->GetColumnBindings();
+			if (i < child_bindings.size()) {
+				auto it = lineage_map.find(child_bindings[i]);
+				if (it != lineage_map.end()) {
+					merged.Merge(it->second);
+				}
 			}
 		}
 
