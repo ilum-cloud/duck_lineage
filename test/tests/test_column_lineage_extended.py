@@ -23,7 +23,6 @@ from event_helpers import (
     assert_field_has_no_sources,
 )
 
-
 # ══════════════════════════════════════════════════════════════════════════
 # Group 1: Transformation Type Correctness
 # ══════════════════════════════════════════════════════════════════════════
