@@ -60,6 +60,11 @@ static void SetDuckLineageTimeout(ClientContext &context, SetScope scope, Value 
 	LineageClient::Get().SetTimeout(parameter.GetValue<int64_t>());
 }
 
+/// @brief Callback for setting dataset name prefixes to exclude from lineage events.
+static void SetDuckLineageExcludeDatasetPrefixes(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetExcludeDatasetPrefixes(parameter.GetValue<string>());
+}
+
 //===--------------------------------------------------------------------===//
 // Extension Loading
 //===--------------------------------------------------------------------===//
@@ -98,6 +103,12 @@ static void LoadInternal(ExtensionLoader &loader) {
 	// SET duck_lineage_timeout = 10
 	config.AddExtensionOption("duck_lineage_timeout", "HTTP request timeout in seconds", LogicalType::BIGINT,
 	                          Value::BIGINT(10), SetDuckLineageTimeout);
+
+	// SET duck_lineage_exclude_dataset_prefixes = '__ducklake_metadata_'
+	config.AddExtensionOption("duck_lineage_exclude_dataset_prefixes",
+	                          "Comma-separated prefixes of dataset names to exclude from lineage events",
+	                          LogicalType::VARCHAR, Value("__ducklake_metadata_"),
+	                          SetDuckLineageExcludeDatasetPrefixes);
 
 	// Register the optimizer extension that injects lineage tracking
 	OptimizerExtension extension;

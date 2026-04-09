@@ -20,7 +20,6 @@ from event_helpers import (
     assert_column_lineage_field_has_source,
 )
 
-
 # ── Test: Direct column references ──────────────────────────────────────
 
 
