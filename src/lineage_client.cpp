@@ -7,6 +7,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "lineage_client.hpp"
+#include "duckdb/common/string_util.hpp"
 #include <curl/curl.h>
 #include <iostream>
 #include <chrono>
@@ -126,6 +127,21 @@ void LineageClient::SetTimeout(int64_t timeout) {
 	timeout_seconds = timeout;
 }
 
+void LineageClient::SetExcludeDatasetPrefixes(const std::string &prefixes_csv) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	exclude_dataset_prefixes.clear();
+	if (prefixes_csv.empty()) {
+		return;
+	}
+	auto tokens = duckdb::StringUtil::Split(prefixes_csv, ',');
+	for (auto &token : tokens) {
+		duckdb::StringUtil::Trim(token);
+		if (!token.empty()) {
+			exclude_dataset_prefixes.push_back(std::move(token));
+		}
+	}
+}
+
 //===--------------------------------------------------------------------===//
 // Configuration Getters (Thread-Safe)
 //===--------------------------------------------------------------------===//
@@ -167,6 +183,11 @@ size_t LineageClient::GetMaxQueueSize() const {
 int64_t LineageClient::GetTimeout() const {
 	std::lock_guard<std::mutex> lock(config_mutex);
 	return timeout_seconds;
+}
+
+std::vector<std::string> LineageClient::GetExcludeDatasetPrefixes() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return exclude_dataset_prefixes;
 }
 
 size_t LineageClient::GetDroppedEvents() const {

@@ -624,12 +624,26 @@ public:
 	const unordered_set<string> &view_dependencies; ///< Fully qualified names of view dependencies (to skip)
 	const unordered_set<string>
 	    &view_dependency_tables; ///< Just table names of view dependencies (for flexible matching)
+	const vector<string> exclude_prefixes; ///< Cached dataset name prefixes to exclude (from config)
 
 	explicit LineagePlanVisitor(ClientContext &context, LineageEventBuilder &builder,
 	                            const unordered_set<string> &view_dependencies,
 	                            const unordered_set<string> &view_dependency_tables)
 	    : context(context), builder(builder), view_dependencies(view_dependencies),
-	      view_dependency_tables(view_dependency_tables) {
+	      view_dependency_tables(view_dependency_tables),
+	      exclude_prefixes(LineageClient::Get().GetExcludeDatasetPrefixes()) {
+	}
+
+	/// @brief Check if a dataset should be excluded based on configured prefixes.
+	/// @param fully_qualified_name The fully qualified dataset name (catalog.schema.table).
+	/// @return True if the dataset should be excluded from lineage events.
+	bool IsExcludedDataset(const string &fully_qualified_name) const {
+		for (const auto &prefix : exclude_prefixes) {
+			if (StringUtil::StartsWith(fully_qualified_name, prefix)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/// @brief Recursively visit an operator and all its children.
@@ -669,6 +683,10 @@ public:
 					string fully_qualified_name = GetFullyQualifiedTableName(
 					    get.GetTable()->catalog, get.GetTable()->ParentSchema(), get.GetTable()->name);
 
+					if (IsExcludedDataset(fully_qualified_name)) {
+						return;
+					}
+
 					// Extract schema information from the view
 					json fields = json::array();
 					for (auto &col : get.GetTable()->GetColumns().Logical()) {
@@ -695,16 +713,20 @@ public:
 				}
 
 				// This is a regular TABLE - process it normally
+				// Get fully qualified table name early for filtering
+				string fully_qualified_name = GetFullyQualifiedTableName(
+				    get.GetTable()->catalog, get.GetTable()->ParentSchema(), get.GetTable()->name);
+
+				if (IsExcludedDataset(fully_qualified_name)) {
+					return;
+				}
+
 				// Resolve namespace and data path (uses DATA_PATH for DuckLake)
 				string dataset_ns = ResolveDatasetNamespace(get.GetTable()->catalog);
 				string data_path = ResolveCatalogDataPath(get.GetTable()->catalog);
 
 				// Extract catalog information for the catalog facet
 				CatalogInfo catalog_info = ExtractCatalogInfo(get.GetTable()->catalog);
-
-				// Get fully qualified table name: catalog.schema.table
-				string fully_qualified_name = GetFullyQualifiedTableName(
-				    get.GetTable()->catalog, get.GetTable()->ParentSchema(), get.GetTable()->name);
 
 				// Extract schema information (column names and types)
 				json fields = json::array();
@@ -726,6 +748,10 @@ public:
 
 					// URL decode to get fully qualified table name
 					string fully_qualified_name = StringUtil::URLDecode(encoded_name);
+
+					if (IsExcludedDataset(fully_qualified_name)) {
+						return;
+					}
 
 					// Parse catalog.schema.table
 					string catalog_name, schema_name, table_name;
@@ -927,6 +953,15 @@ public:
 			// ===== Handle table inserts (INSERT INTO table) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_INSERT) {
 			auto &insert = op.Cast<LogicalInsert>();
+
+			// Get fully qualified table name early for filtering
+			string fully_qualified_name =
+			    GetFullyQualifiedTableName(insert.table.catalog, insert.table.ParentSchema(), insert.table.name);
+
+			if (IsExcludedDataset(fully_qualified_name)) {
+				return;
+			}
+
 			// Get the data path for dataSource facet (uses DATA_PATH for DuckLake)
 			string catalog_path = ResolveCatalogDataPath(insert.table.catalog);
 
@@ -935,10 +970,6 @@ public:
 
 			// Resolve namespace (uses DATA_PATH for DuckLake, user-configured otherwise)
 			string dataset_ns = ResolveDatasetNamespace(insert.table.catalog);
-
-			// Get fully qualified table name: catalog.schema.table
-			string fully_qualified_name =
-			    GetFullyQualifiedTableName(insert.table.catalog, insert.table.ParentSchema(), insert.table.name);
 
 			// Extract schema information
 			json fields = json::array();
@@ -959,6 +990,15 @@ public:
 			// ===== Handle table creation (CREATE TABLE) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
 			auto &create = op.Cast<LogicalCreateTable>();
+
+			// Get fully qualified table name early for filtering
+			string fully_qualified_name =
+			    GetFullyQualifiedTableName(create.schema.catalog, create.schema, create.info->Base().table);
+
+			if (IsExcludedDataset(fully_qualified_name)) {
+				return;
+			}
+
 			// Get the data path for dataSource facet (uses DATA_PATH for DuckLake)
 			string catalog_path = ResolveCatalogDataPath(create.schema.catalog);
 
@@ -967,10 +1007,6 @@ public:
 
 			// Resolve namespace (uses DATA_PATH for DuckLake, user-configured otherwise)
 			string dataset_ns = ResolveDatasetNamespace(create.schema.catalog);
-
-			// Get fully qualified table name: catalog.schema.table
-			string fully_qualified_name =
-			    GetFullyQualifiedTableName(create.schema.catalog, create.schema, create.info->Base().table);
 
 			// Extract schema information from the CREATE TABLE definition
 			json fields = json::array();
@@ -994,16 +1030,20 @@ public:
 			if (create.info && create.info->type == CatalogType::VIEW_ENTRY) {
 				auto &view_info = create.info->Cast<CreateViewInfo>();
 
+				// Get fully qualified view name early for filtering
+				string fully_qualified_name =
+				    GetFullyQualifiedTableName(create.schema->catalog, *create.schema, view_info.view_name);
+
+				if (IsExcludedDataset(fully_qualified_name)) {
+					return;
+				}
+
 				// Resolve namespace and data path (uses DATA_PATH for DuckLake)
 				string dataset_ns = ResolveDatasetNamespace(create.schema->catalog);
 				string catalog_path = ResolveCatalogDataPath(create.schema->catalog);
 
 				// Extract catalog information for the catalog facet
 				CatalogInfo catalog_info = ExtractCatalogInfo(create.schema->catalog);
-
-				// Get fully qualified view name: catalog.schema.view
-				string fully_qualified_name =
-				    GetFullyQualifiedTableName(create.schema->catalog, *create.schema, view_info.view_name);
 
 				// Extract schema information from the view definition
 				// The view's schema is defined by the names and types in CreateViewInfo
@@ -1039,19 +1079,23 @@ public:
 
 				// Handle table and view drops
 				if (drop_info.type == CatalogType::TABLE_ENTRY || drop_info.type == CatalogType::VIEW_ENTRY) {
-					// Get catalog and schema from drop info
-					auto &catalog = Catalog::GetCatalog(context, drop_info.catalog);
-					string dataset_ns = ResolveDatasetNamespace(catalog);
-					string catalog_path = ResolveCatalogDataPath(catalog);
-					CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
-
-					// Build fully qualified table/view name
+					// Build fully qualified table/view name early for filtering
 					string fully_qualified_name;
 					if (!drop_info.catalog.empty()) {
 						fully_qualified_name = drop_info.catalog + "." + drop_info.schema + "." + drop_info.name;
 					} else {
 						fully_qualified_name = drop_info.schema + "." + drop_info.name;
 					}
+
+					if (IsExcludedDataset(fully_qualified_name)) {
+						return;
+					}
+
+					// Get catalog and schema from drop info
+					auto &catalog = Catalog::GetCatalog(context, drop_info.catalog);
+					string dataset_ns = ResolveDatasetNamespace(catalog);
+					string catalog_path = ResolveCatalogDataPath(catalog);
+					CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
 
 					// For DROP, we don't have schema information available
 					json fields = json::array();
@@ -1080,19 +1124,23 @@ public:
 				// Handle table and view alterations
 				if (alter_info.GetCatalogType() == CatalogType::TABLE_ENTRY ||
 				    alter_info.GetCatalogType() == CatalogType::VIEW_ENTRY) {
-					// Get catalog and schema from alter info
-					auto &catalog = Catalog::GetCatalog(context, alter_info.catalog);
-					string dataset_ns = ResolveDatasetNamespace(catalog);
-					string catalog_path = ResolveCatalogDataPath(catalog);
-					CatalogInfo catalog_info_obj = ExtractCatalogInfo(catalog);
-
-					// Build fully qualified table/view name
+					// Build fully qualified table/view name early for filtering
 					string fully_qualified_name;
 					if (!alter_info.catalog.empty()) {
 						fully_qualified_name = alter_info.catalog + "." + alter_info.schema + "." + alter_info.name;
 					} else {
 						fully_qualified_name = alter_info.schema + "." + alter_info.name;
 					}
+
+					if (IsExcludedDataset(fully_qualified_name)) {
+						return;
+					}
+
+					// Get catalog and schema from alter info
+					auto &catalog = Catalog::GetCatalog(context, alter_info.catalog);
+					string dataset_ns = ResolveDatasetNamespace(catalog);
+					string catalog_path = ResolveCatalogDataPath(catalog);
+					CatalogInfo catalog_info_obj = ExtractCatalogInfo(catalog);
 
 					// For ALTER, we don't have schema information available
 					json fields = json::array();
@@ -1157,16 +1205,21 @@ public:
 			// ===== Handle UPDATE (OVERWRITE semantics) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_UPDATE) {
 			auto &update = op.Cast<LogicalUpdate>();
+
+			// Get fully qualified table name early for filtering
+			string fully_qualified_name =
+			    GetFullyQualifiedTableName(update.table.catalog, update.table.ParentSchema(), update.table.name);
+
+			if (IsExcludedDataset(fully_qualified_name)) {
+				return;
+			}
+
 			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
 			string dataset_ns = ResolveDatasetNamespace(update.table.catalog);
 			string catalog_path = ResolveCatalogDataPath(update.table.catalog);
 
 			// Extract catalog information for the catalog facet
 			CatalogInfo catalog_info = ExtractCatalogInfo(update.table.catalog);
-
-			// Get fully qualified table name: catalog.schema.table
-			string fully_qualified_name =
-			    GetFullyQualifiedTableName(update.table.catalog, update.table.ParentSchema(), update.table.name);
 
 			// Extract schema information
 			json fields = json::array();
@@ -1186,16 +1239,21 @@ public:
 			// ===== Handle DELETE (partial data removal) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_DELETE) {
 			auto &del = op.Cast<LogicalDelete>();
+
+			// Get fully qualified table name early for filtering
+			string fully_qualified_name =
+			    GetFullyQualifiedTableName(del.table.catalog, del.table.ParentSchema(), del.table.name);
+
+			if (IsExcludedDataset(fully_qualified_name)) {
+				return;
+			}
+
 			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
 			string dataset_ns = ResolveDatasetNamespace(del.table.catalog);
 			string catalog_path = ResolveCatalogDataPath(del.table.catalog);
 
 			// Extract catalog information for the catalog facet
 			CatalogInfo catalog_info = ExtractCatalogInfo(del.table.catalog);
-
-			// Get fully qualified table name: catalog.schema.table
-			string fully_qualified_name =
-			    GetFullyQualifiedTableName(del.table.catalog, del.table.ParentSchema(), del.table.name);
 
 			// Extract schema information
 			json fields = json::array();
@@ -1887,6 +1945,13 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			}
 			++it;
 		}
+	}
+
+	// Skip events that have no datasets after filtering and deduplication
+	bool has_inputs = event.contains("inputs") && event["inputs"].is_array() && !event["inputs"].empty();
+	bool has_outputs = event.contains("outputs") && event["outputs"].is_array() && !event["outputs"].empty();
+	if (!has_inputs && !has_outputs) {
+		return;
 	}
 
 	// Send the deduplicated event
