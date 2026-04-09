@@ -62,13 +62,11 @@ def test_simple_query(sample_table, marquez_client):
     result = conn.execute("SELECT COUNT(*) FROM test_employees").fetchone()
     assert result[0] == 4
 
-    result = conn.execute(
-        """
+    result = conn.execute("""
         SELECT name FROM test_employees
         WHERE department = 'Engineering'
         ORDER BY name
-    """
-    ).fetchall()
+    """).fetchall()
 
     assert len(result) == 2
     assert result[0][0] == "Alice"

@@ -623,7 +623,7 @@ public:
 	LineageEventBuilder &builder;                   ///< Event builder to add datasets to
 	const unordered_set<string> &view_dependencies; ///< Fully qualified names of view dependencies (to skip)
 	const unordered_set<string>
-	    &view_dependency_tables; ///< Just table names of view dependencies (for flexible matching)
+	    &view_dependency_tables;           ///< Just table names of view dependencies (for flexible matching)
 	const vector<string> exclude_prefixes; ///< Cached dataset name prefixes to exclude (from config)
 
 	explicit LineagePlanVisitor(ClientContext &context, LineageEventBuilder &builder,

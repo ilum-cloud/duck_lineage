@@ -20,7 +20,6 @@ from event_helpers import (
     assert_column_lineage_field_has_source,
 )
 
-
 # ── Test: Direct column references ──────────────────────────────────────
 
 
@@ -149,14 +148,12 @@ def test_star_expansion_column_lineage(col_conn, marquez_client):
 def test_join_column_lineage(col_conn, marquez_client):
     """SELECT t1.a, t2.b FROM t1 JOIN t2 -> columns traced to respective tables."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE join_out AS
         SELECT source_a.name, source_b.category
         FROM source_a
         JOIN source_b ON source_a.id = source_b.id
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -179,14 +176,12 @@ def test_join_column_lineage(col_conn, marquez_client):
 def test_aggregation_column_lineage(col_conn, marquez_client):
     """SELECT SUM(a) FROM t GROUP BY b -> aggregate traces to source columns."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE agg_out AS
         SELECT name, SUM(value) AS total_value
         FROM source_a
         GROUP BY name
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -209,14 +204,12 @@ def test_aggregation_column_lineage(col_conn, marquez_client):
 def test_union_column_lineage(col_conn, marquez_client):
     """UNION merges column lineage from both branches."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE union_out AS
         SELECT id, name FROM source_a
         UNION ALL
         SELECT id, category FROM source_b
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -308,15 +301,13 @@ def test_column_lineage_facet_structure(col_conn, marquez_client):
 def test_window_function_column_lineage(col_conn, marquez_client):
     """Window functions: ROW_NUMBER, SUM OVER -> traces to partition/order/aggregate cols."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE window_out AS
         SELECT id, name,
                ROW_NUMBER() OVER (ORDER BY id) AS row_num,
                SUM(value) OVER (PARTITION BY name) AS running_total
         FROM source_a
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -347,14 +338,12 @@ def test_window_function_column_lineage(col_conn, marquez_client):
 def test_intersect_column_lineage(col_conn, marquez_client):
     """INTERSECT merges column lineage from both branches."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE intersect_out AS
         SELECT id FROM source_a
         INTERSECT
         SELECT id FROM source_b
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -382,14 +371,12 @@ def test_intersect_column_lineage(col_conn, marquez_client):
 def test_except_column_lineage(col_conn, marquez_client):
     """EXCEPT merges column lineage from both branches."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE except_out AS
         SELECT id FROM source_a
         EXCEPT
         SELECT id FROM source_b
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -417,13 +404,11 @@ def test_except_column_lineage(col_conn, marquez_client):
 def test_subquery_column_lineage(col_conn, marquez_client):
     """SELECT FROM (SELECT ...) -> traces through subquery to base table."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE subq_out AS
         SELECT sub.id, sub.name
         FROM (SELECT id, name FROM source_a WHERE value > 50) AS sub
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -448,13 +433,11 @@ def test_subquery_column_lineage(col_conn, marquez_client):
 def test_cte_column_lineage(col_conn, marquez_client):
     """WITH cte AS (...) SELECT ... -> traces through CTE to base table."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE cte_out AS
         WITH filtered AS (SELECT id, name FROM source_a WHERE value > 50)
         SELECT id, name FROM filtered
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -481,15 +464,13 @@ def test_multi_join_column_lineage(col_conn, marquez_client):
     conn = col_conn
     conn.execute("CREATE TABLE source_c (id INTEGER, label VARCHAR)")
     conn.execute("INSERT INTO source_c VALUES (1, 'L1'), (2, 'L2')")
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE multi_join_out AS
         SELECT source_a.name, source_b.category, source_c.label
         FROM source_a
         JOIN source_b ON source_a.id = source_b.id
         JOIN source_c ON source_a.id = source_c.id
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -508,14 +489,12 @@ def test_multi_join_column_lineage(col_conn, marquez_client):
 def test_self_join_column_lineage(col_conn, marquez_client):
     """Self-join: same table with different aliases -> both trace to same source."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE self_join_out AS
         SELECT a.name AS name_a, b.name AS name_b
         FROM source_a a
         JOIN source_a b ON a.id = b.id
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -533,14 +512,12 @@ def test_self_join_column_lineage(col_conn, marquez_client):
 def test_case_expression_column_lineage(col_conn, marquez_client):
     """CASE WHEN -> traces to columns used in WHEN conditions and THEN values."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE case_out AS
         SELECT id,
                CASE WHEN value > 150 THEN name ELSE 'unknown' END AS label
         FROM source_a
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -561,15 +538,13 @@ def test_case_expression_column_lineage(col_conn, marquez_client):
 def test_coalesce_and_functions_column_lineage(col_conn, marquez_client):
     """COALESCE and UPPER -> trace to underlying source column."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE coalesce_out AS
         SELECT id,
                COALESCE(name, 'default') AS safe_name,
                UPPER(name) AS upper_name
         FROM source_a
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -593,14 +568,12 @@ def test_coalesce_and_functions_column_lineage(col_conn, marquez_client):
 def test_nested_expression_column_lineage(col_conn, marquez_client):
     """Nested arithmetic (a + b - c * d) -> traces to all source columns."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE arith_out AS
         SELECT id,
                value + CAST(id AS DECIMAL(10,2)) - value * 2 AS computed
         FROM source_a
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -665,12 +638,10 @@ def test_file_scan_csv_column_lineage(col_conn, marquez_client, tmp_path):
     csv_file = str(tmp_path / "data.csv")
     conn.execute(f"COPY (SELECT 1 AS id, 'alice' AS name, 100 AS score) TO '{csv_file}' (HEADER)")
     sleep(2)  # let COPY event settle
-    conn.execute(
-        f"""
+    conn.execute(f"""
         CREATE TABLE csv_out AS
         SELECT id, name, score FROM read_csv('{csv_file}')
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -693,12 +664,10 @@ def test_file_scan_parquet_column_lineage(col_conn, marquez_client, tmp_path):
     parquet_file = str(tmp_path / "data.parquet")
     conn.execute(f"COPY (SELECT 1 AS id, 'bob' AS name, 200 AS score) TO '{parquet_file}' (FORMAT PARQUET)")
     sleep(2)
-    conn.execute(
-        f"""
+    conn.execute(f"""
         CREATE TABLE parquet_out AS
         SELECT id, name FROM read_parquet('{parquet_file}')
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -718,20 +687,16 @@ def test_file_scan_parquet_column_lineage(col_conn, marquez_client, tmp_path):
 def test_pivot_column_lineage(col_conn, marquez_client):
     """PIVOT: group columns trace to source, pivoted columns trace to aggregated column."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE pivot_src (city VARCHAR, quarter VARCHAR, revenue INTEGER);
         INSERT INTO pivot_src VALUES
             ('NYC', 'Q1', 100), ('NYC', 'Q2', 200),
             ('SF', 'Q1', 150), ('SF', 'Q2', 250);
-    """
-    )
-    conn.execute(
-        """
+    """)
+    conn.execute("""
         CREATE TABLE pivot_out AS
         PIVOT pivot_src ON quarter USING SUM(revenue) GROUP BY city
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -767,18 +732,14 @@ def test_pivot_column_lineage(col_conn, marquez_client):
 def test_unnest_column_lineage(col_conn, marquez_client):
     """UNNEST: pass-through columns retain lineage, unnested column traces to source."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE unnest_src (id INTEGER, tags INTEGER[]);
         INSERT INTO unnest_src VALUES (1, [10, 20]), (2, [30]);
-    """
-    )
-    conn.execute(
-        """
+    """)
+    conn.execute("""
         CREATE TABLE unnest_out AS
         SELECT id, UNNEST(tags) AS tag FROM unnest_src
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -813,18 +774,14 @@ def test_unnest_column_lineage(col_conn, marquez_client):
 def test_unpivot_column_lineage(col_conn, marquez_client):
     """UNPIVOT transforms columns into rows — lineage should trace source columns."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE unpivot_src (city VARCHAR, q1 INTEGER, q2 INTEGER);
         INSERT INTO unpivot_src VALUES ('NYC', 100, 200), ('SF', 150, 250);
-    """
-    )
-    conn.execute(
-        """
+    """)
+    conn.execute("""
         CREATE TABLE unpivot_out AS
         UNPIVOT unpivot_src ON q1, q2 INTO NAME quarter VALUE revenue
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -847,12 +804,10 @@ def test_unpivot_column_lineage(col_conn, marquez_client):
 def test_distinct_column_lineage(col_conn, marquez_client):
     """DISTINCT preserves column lineage through passthrough."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE distinct_out AS
         SELECT DISTINCT name FROM source_a
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -870,12 +825,10 @@ def test_distinct_column_lineage(col_conn, marquez_client):
 def test_order_limit_column_lineage(col_conn, marquez_client):
     """ORDER BY + LIMIT preserves column lineage (passthrough)."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE order_out AS
         SELECT id, name FROM source_a ORDER BY id LIMIT 1
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -892,13 +845,11 @@ def test_order_limit_column_lineage(col_conn, marquez_client):
 def test_cross_join_column_lineage(col_conn, marquez_client):
     """Cross join: columns from both sides trace correctly."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE cross_out AS
         SELECT source_a.name, source_b.category
         FROM source_a CROSS JOIN source_b
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -916,12 +867,10 @@ def test_cross_join_column_lineage(col_conn, marquez_client):
 def test_nested_functions_column_lineage(col_conn, marquez_client):
     """UPPER(SUBSTRING(name, 1, 3)) traces to source column 'name'."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE nested_fn_out AS
         SELECT id, UPPER(SUBSTRING(name, 1, 3)) AS short_name FROM source_a
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
@@ -944,8 +893,7 @@ def test_nested_functions_column_lineage(col_conn, marquez_client):
 def test_multiple_aggregates_column_lineage(col_conn, marquez_client):
     """SUM, COUNT, AVG in same query all trace correctly."""
     conn = col_conn
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE multi_agg_out AS
         SELECT name,
                SUM(value) AS total,
@@ -953,8 +901,7 @@ def test_multiple_aggregates_column_lineage(col_conn, marquez_client):
                AVG(value) AS avg_val
         FROM source_a
         GROUP BY name
-    """
-    )
+    """)
     sleep(3)
 
     events = marquez_client.wait_for_events(NAMESPACE, min_events=2, timeout_seconds=30)
