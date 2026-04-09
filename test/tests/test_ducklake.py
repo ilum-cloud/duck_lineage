@@ -17,6 +17,14 @@ Note: Tests will skip if DuckLake extension is not available.
 
 import pytest
 from pathlib import Path
+from time import sleep
+
+from event_helpers import (
+    find_complete_events,
+    get_outputs,
+    get_facets,
+    assert_column_lineage_field_has_source,
+)
 
 DUCKLAKE_NAMESPACE = "ducklake"
 
@@ -548,3 +556,132 @@ def test_ducklake_catalog_facet_content(duckdb_with_ducklake, marquez_client):
         assert (
             "file://" in metadata_uri or "ducklake" in metadata_uri.lower()
         ), f"metadata_uri should reference ducklake, got {metadata_uri}"
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Column-Level Lineage Tests for DuckLake
+# ══════════════════════════════════════════════════════════════════════════
+
+
+def _get_ducklake_column_lineage(events, output_name_contains):
+    """Find columnLineage facet from COMPLETE events for a DuckLake table."""
+    complete = find_complete_events(events)
+    assert complete, "No COMPLETE events found"
+
+    for event in reversed(complete):
+        for output in get_outputs(event):
+            name = (output.get("name") or "").lower()
+            if output_name_contains.lower() not in name:
+                continue
+            facets = get_facets(output)
+            cl = facets.get("columnLineage")
+            if cl:
+                return cl, output
+
+    return None, None
+
+
+@pytest.mark.integration
+def test_ducklake_column_lineage_simple_ctas(duckdb_with_ducklake, marquez_client, clean_marquez_namespace):
+    """CTAS with direct column references should produce column lineage on DuckLake."""
+    conn, ducklake_ns = duckdb_with_ducklake
+    job_namespace = clean_marquez_namespace
+
+    conn.execute(
+        """
+        CREATE TABLE ducklake_db.cl_source (id INTEGER, name VARCHAR, value DECIMAL(10,2))
+    """
+    )
+    conn.execute("INSERT INTO ducklake_db.cl_source VALUES (1, 'Alice', 100.0), (2, 'Bob', 200.0)")
+
+    conn.execute(
+        """
+        CREATE TABLE ducklake_db.cl_direct_out AS
+        SELECT id, name FROM ducklake_db.cl_source
+    """
+    )
+    sleep(3)
+
+    events = marquez_client.wait_for_events(job_namespace, min_events=2, timeout_seconds=30)
+    cl, output = _get_ducklake_column_lineage(events, "cl_direct_out")
+
+    assert cl is not None, "columnLineage facet should be present for DuckLake CTAS"
+    fields = cl.get("fields") or {}
+    assert len(fields) >= 2, f"Expected at least 2 fields, got {list(fields.keys())}"
+
+    assert_column_lineage_field_has_source(cl, "id", "cl_source", "id")
+    assert_column_lineage_field_has_source(cl, "name", "cl_source", "name")
+
+
+@pytest.mark.integration
+def test_ducklake_column_lineage_join(duckdb_with_ducklake, marquez_client, clean_marquez_namespace):
+    """CTAS with JOIN should trace columns to their respective source tables on DuckLake."""
+    conn, ducklake_ns = duckdb_with_ducklake
+    job_namespace = clean_marquez_namespace
+
+    conn.execute("CREATE TABLE ducklake_db.cl_orders (order_id INTEGER, customer_id INTEGER, amount DECIMAL(10,2))")
+    conn.execute("INSERT INTO ducklake_db.cl_orders VALUES (1, 101, 250.00), (2, 102, 130.00)")
+
+    conn.execute("CREATE TABLE ducklake_db.cl_customers (customer_id INTEGER, name VARCHAR, region VARCHAR)")
+    conn.execute("INSERT INTO ducklake_db.cl_customers VALUES (101, 'Acme', 'EMEA'), (102, 'Globex', 'NA')")
+
+    conn.execute(
+        """
+        CREATE TABLE ducklake_db.cl_join_out AS
+        SELECT o.order_id, o.amount, c.name, c.region
+        FROM ducklake_db.cl_orders o
+        JOIN ducklake_db.cl_customers c ON o.customer_id = c.customer_id
+    """
+    )
+    sleep(3)
+
+    events = marquez_client.wait_for_events(job_namespace, min_events=2, timeout_seconds=30)
+    cl, output = _get_ducklake_column_lineage(events, "cl_join_out")
+
+    assert cl is not None, "columnLineage facet should be present for DuckLake JOIN"
+    fields = cl.get("fields") or {}
+    assert len(fields) >= 4, f"Expected at least 4 fields, got {list(fields.keys())}"
+
+    assert_column_lineage_field_has_source(cl, "order_id", "cl_orders", "order_id")
+    assert_column_lineage_field_has_source(cl, "amount", "cl_orders", "amount")
+    assert_column_lineage_field_has_source(cl, "name", "cl_customers", "name")
+    assert_column_lineage_field_has_source(cl, "region", "cl_customers", "region")
+
+
+@pytest.mark.integration
+def test_ducklake_column_lineage_join_with_aggregation(duckdb_with_ducklake, marquez_client, clean_marquez_namespace):
+    """CTAS with JOIN + GROUP BY should produce column lineage on DuckLake.
+
+    This is the exact pattern that was broken before the resilience fix:
+    column lineage extraction silently failed for DuckLake catalogs.
+    """
+    conn, ducklake_ns = duckdb_with_ducklake
+    job_namespace = clean_marquez_namespace
+
+    conn.execute("CREATE TABLE ducklake_db.cl_agg_orders (order_id INTEGER, customer_id INTEGER, amount DECIMAL(10,2))")
+    conn.execute("INSERT INTO ducklake_db.cl_agg_orders VALUES (1, 101, 250.00), (2, 102, 130.00), (3, 101, 80.00)")
+
+    conn.execute("CREATE TABLE ducklake_db.cl_agg_customers (customer_id INTEGER, name VARCHAR, region VARCHAR)")
+    conn.execute("INSERT INTO ducklake_db.cl_agg_customers VALUES (101, 'Acme', 'EMEA'), (102, 'Globex', 'NA')")
+
+    conn.execute(
+        """
+        CREATE TABLE ducklake_db.cl_revenue AS
+        SELECT c.region, COUNT(o.order_id) AS total_orders, SUM(o.amount) AS revenue
+        FROM ducklake_db.cl_agg_orders o
+        JOIN ducklake_db.cl_agg_customers c ON o.customer_id = c.customer_id
+        GROUP BY c.region
+    """
+    )
+    sleep(3)
+
+    events = marquez_client.wait_for_events(job_namespace, min_events=2, timeout_seconds=30)
+    cl, output = _get_ducklake_column_lineage(events, "cl_revenue")
+
+    assert cl is not None, "columnLineage facet should be present for DuckLake JOIN + GROUP BY"
+    fields = cl.get("fields") or {}
+    assert len(fields) >= 3, f"Expected at least 3 fields, got {list(fields.keys())}"
+
+    assert_column_lineage_field_has_source(cl, "region", "cl_agg_customers", "region")
+    assert_column_lineage_field_has_source(cl, "total_orders", "cl_agg_orders", "order_id")
+    assert_column_lineage_field_has_source(cl, "revenue", "cl_agg_orders", "amount")
