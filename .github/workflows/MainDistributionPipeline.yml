@@ -111,12 +111,12 @@ jobs:
 
   duckdb-stable-build:
     name: Build extension binaries
-    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.0
+    uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5.1
     needs: [ci-config, run-tests]
     if: needs.ci-config.outputs.should_run_code == 'true'
     with:
-      duckdb_version: v1.5.0
-      ci_tools_version: v1.5.0
+      duckdb_version: v1.5.1
+      ci_tools_version: v1.5.1
       extension_name: duck_lineage
       exclude_archs: "wasm_mvp;wasm_eh;wasm_threads;windows_amd64_mingw;"
       vcpkg_commit: 84bab45d415d22042bd0b9081aea57f362da3f35
@@ -129,7 +129,7 @@ jobs:
     if: needs.ci-config.outputs.should_run_code == 'true' && github.event.pull_request.draft != true
     uses: ./.github/workflows/_extension_code_quality.yml
     with:
-      duckdb_version: v1.5.0
-      ci_tools_version: v1.5.0
+      duckdb_version: v1.5.1
+      ci_tools_version: v1.5.1
       extension_name: duck_lineage
       format_checks: 'format;tidy'
