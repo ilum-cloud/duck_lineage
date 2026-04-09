@@ -118,22 +118,26 @@ def marquez_client(marquez_url):
 def col_conn(duckdb_with_extension):
     """Connection with sample tables for column lineage tests."""
     conn = duckdb_with_extension
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE source_a (
             id INTEGER,
             name VARCHAR,
             value DECIMAL(10,2)
         )
-    """)
+    """
+    )
     conn.execute("INSERT INTO source_a VALUES (1, 'Alice', 100.0), (2, 'Bob', 200.0)")
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE source_b (
             id INTEGER,
             category VARCHAR,
             score DOUBLE
         )
-    """)
+    """
+    )
     conn.execute("INSERT INTO source_b VALUES (1, 'X', 0.5), (2, 'Y', 0.8)")
     return conn
 
@@ -143,22 +147,26 @@ def sample_table(duckdb_with_extension):
     """Create a sample table for testing."""
     conn = duckdb_with_extension
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE test_employees (
             id INTEGER,
             name VARCHAR,
             department VARCHAR,
             salary DECIMAL(10,2)
         )
-    """)
+    """
+    )
 
-    conn.execute("""
+    conn.execute(
+        """
         INSERT INTO test_employees VALUES
             (1, 'Alice', 'Engineering', 95000),
             (2, 'Bob', 'Sales', 75000),
             (3, 'Carol', 'Engineering', 105000),
             (4, 'Dave', 'Marketing', 65000)
-    """)
+    """
+    )
 
     return conn
 
