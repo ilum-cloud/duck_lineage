@@ -587,15 +587,19 @@ def test_ducklake_column_lineage_simple_ctas(duckdb_with_ducklake, marquez_clien
     conn, ducklake_ns = duckdb_with_ducklake
     job_namespace = clean_marquez_namespace
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.cl_source (id INTEGER, name VARCHAR, value DECIMAL(10,2))
-    """)
+    """
+    )
     conn.execute("INSERT INTO ducklake_db.cl_source VALUES (1, 'Alice', 100.0), (2, 'Bob', 200.0)")
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.cl_direct_out AS
         SELECT id, name FROM ducklake_db.cl_source
-    """)
+    """
+    )
     sleep(3)
 
     events = marquez_client.wait_for_events(job_namespace, min_events=2, timeout_seconds=30)
@@ -621,12 +625,14 @@ def test_ducklake_column_lineage_join(duckdb_with_ducklake, marquez_client, clea
     conn.execute("CREATE TABLE ducklake_db.cl_customers (customer_id INTEGER, name VARCHAR, region VARCHAR)")
     conn.execute("INSERT INTO ducklake_db.cl_customers VALUES (101, 'Acme', 'EMEA'), (102, 'Globex', 'NA')")
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.cl_join_out AS
         SELECT o.order_id, o.amount, c.name, c.region
         FROM ducklake_db.cl_orders o
         JOIN ducklake_db.cl_customers c ON o.customer_id = c.customer_id
-    """)
+    """
+    )
     sleep(3)
 
     events = marquez_client.wait_for_events(job_namespace, min_events=2, timeout_seconds=30)
@@ -658,13 +664,15 @@ def test_ducklake_column_lineage_join_with_aggregation(duckdb_with_ducklake, mar
     conn.execute("CREATE TABLE ducklake_db.cl_agg_customers (customer_id INTEGER, name VARCHAR, region VARCHAR)")
     conn.execute("INSERT INTO ducklake_db.cl_agg_customers VALUES (101, 'Acme', 'EMEA'), (102, 'Globex', 'NA')")
 
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE ducklake_db.cl_revenue AS
         SELECT c.region, COUNT(o.order_id) AS total_orders, SUM(o.amount) AS revenue
         FROM ducklake_db.cl_agg_orders o
         JOIN ducklake_db.cl_agg_customers c ON o.customer_id = c.customer_id
         GROUP BY c.region
-    """)
+    """
+    )
     sleep(3)
 
     events = marquez_client.wait_for_events(job_namespace, min_events=2, timeout_seconds=30)
