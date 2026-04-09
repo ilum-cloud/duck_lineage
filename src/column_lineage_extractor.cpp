@@ -260,44 +260,58 @@ void ColumnLineageExtractor::TraversePlan(LogicalOperator &op) {
 	}
 
 	// Now handle this operator
-	switch (op.type) {
-	case LogicalOperatorType::LOGICAL_GET:
-		HandleGet(op);
-		break;
-	case LogicalOperatorType::LOGICAL_PROJECTION:
-		HandleProjection(op);
-		break;
-	case LogicalOperatorType::LOGICAL_FILTER:
-		HandleFilter(op);
-		break;
-	case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
-	case LogicalOperatorType::LOGICAL_ANY_JOIN:
-	case LogicalOperatorType::LOGICAL_DELIM_JOIN:
-	case LogicalOperatorType::LOGICAL_ASOF_JOIN:
-	case LogicalOperatorType::LOGICAL_CROSS_PRODUCT:
-	case LogicalOperatorType::LOGICAL_POSITIONAL_JOIN:
-		HandleJoin(op);
-		break;
-	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
-		HandleAggregate(op);
-		break;
-	case LogicalOperatorType::LOGICAL_UNION:
-	case LogicalOperatorType::LOGICAL_INTERSECT:
-	case LogicalOperatorType::LOGICAL_EXCEPT:
-		HandleSetOperation(op);
-		break;
-	case LogicalOperatorType::LOGICAL_WINDOW:
-		HandleWindow(op);
-		break;
-	case LogicalOperatorType::LOGICAL_PIVOT:
-		HandlePivot(op);
-		break;
-	case LogicalOperatorType::LOGICAL_UNNEST:
-		HandleUnnest(op);
-		break;
-	default:
-		HandleDefaultPassthrough(op);
-		break;
+	// Wrap in try-catch so a failure in one operator (e.g., DuckLake-specific scan)
+	// doesn't abort column lineage extraction for the entire plan
+	try {
+		switch (op.type) {
+		case LogicalOperatorType::LOGICAL_GET:
+			HandleGet(op);
+			break;
+		case LogicalOperatorType::LOGICAL_PROJECTION:
+			HandleProjection(op);
+			break;
+		case LogicalOperatorType::LOGICAL_FILTER:
+			HandleFilter(op);
+			break;
+		case LogicalOperatorType::LOGICAL_COMPARISON_JOIN:
+		case LogicalOperatorType::LOGICAL_ANY_JOIN:
+		case LogicalOperatorType::LOGICAL_DELIM_JOIN:
+		case LogicalOperatorType::LOGICAL_ASOF_JOIN:
+		case LogicalOperatorType::LOGICAL_CROSS_PRODUCT:
+		case LogicalOperatorType::LOGICAL_POSITIONAL_JOIN:
+			HandleJoin(op);
+			break;
+		case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY:
+			HandleAggregate(op);
+			break;
+		case LogicalOperatorType::LOGICAL_UNION:
+		case LogicalOperatorType::LOGICAL_INTERSECT:
+		case LogicalOperatorType::LOGICAL_EXCEPT:
+			HandleSetOperation(op);
+			break;
+		case LogicalOperatorType::LOGICAL_WINDOW:
+			HandleWindow(op);
+			break;
+		case LogicalOperatorType::LOGICAL_PIVOT:
+			HandlePivot(op);
+			break;
+		case LogicalOperatorType::LOGICAL_UNNEST:
+			HandleUnnest(op);
+			break;
+		default:
+			HandleDefaultPassthrough(op);
+			break;
+		}
+	} catch (std::exception &e) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Column lineage handler failed for operator " +
+			               LogicalOperatorToString(op.type) + ": " + string(e.what()));
+		}
+	} catch (...) {
+		if (LineageClient::Get().IsDebug()) {
+			Printer::Print("OpenLineage Debug: Column lineage handler failed for operator " +
+			               LogicalOperatorToString(op.type) + " (unknown error)");
+		}
 	}
 }
 
@@ -358,9 +372,14 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 		}
 
 		// Get the table columns for name lookup
-		auto &table_columns = get.GetTable()->GetColumns();
-		for (auto &col : table_columns.Logical()) {
-			column_names.push_back(col.Name());
+		// Try catalog columns first, fall back to get.names (works for all scan types including DuckLake)
+		try {
+			auto &table_columns = get.GetTable()->GetColumns();
+			for (auto &col : table_columns.Logical()) {
+				column_names.push_back(col.Name());
+			}
+		} catch (...) {
+			column_names = get.names;
 		}
 	} else {
 		// File scan (read_csv, read_parquet, etc.) or table function
