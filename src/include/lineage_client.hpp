@@ -10,6 +10,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <queue>
 #include <mutex>
 #include <condition_variable>
@@ -80,6 +81,11 @@ public:
 	/// @note Thread-safe.
 	void SetTimeout(int64_t timeout);
 
+	/// @brief Set comma-separated prefixes of dataset names to exclude from lineage events.
+	/// @param prefixes_csv Comma-separated list of prefixes (e.g., "__ducklake_metadata_,staging_temp_").
+	/// @note Thread-safe. Datasets whose fully qualified name starts with any prefix are skipped.
+	void SetExcludeDatasetPrefixes(const std::string &prefixes_csv);
+
 	// ===== Accessor Methods =====
 
 	/// @brief Get the current OpenLineage backend URL.
@@ -116,6 +122,11 @@ public:
 	/// @return Timeout in seconds.
 	/// @note Thread-safe.
 	int64_t GetTimeout() const;
+
+	/// @brief Get the current exclude dataset prefixes.
+	/// @return Vector of prefix strings.
+	/// @note Thread-safe.
+	std::vector<std::string> GetExcludeDatasetPrefixes() const;
 
 	/// @brief Get the number of events dropped due to queue overflow.
 	/// @return Number of dropped events.
@@ -163,6 +174,7 @@ private:
 	size_t max_queue_size = 10000;   ///< Maximum queue size to prevent memory issues
 	int64_t timeout_seconds = 10;    ///< HTTP request timeout in seconds
 	size_t dropped_events = 0;       ///< Counter for dropped events (queue full)
+	std::vector<std::string> exclude_dataset_prefixes = {"__ducklake_metadata_"}; ///< Dataset name prefixes to exclude
 };
 
 } // namespace duckdb
