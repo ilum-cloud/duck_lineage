@@ -1,9 +1,5 @@
 # DuckLineage Extension for DuckDB
 
-This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
-
----
-
 This is an extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
 
 ## Supported Features
@@ -134,6 +130,10 @@ make test-all
 ```
 
 See [test/README.md](test/README.md) for detailed testing documentation.
+
+## Extension development
+
+This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
 
 # Extension updating
 
