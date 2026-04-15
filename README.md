@@ -1,10 +1,18 @@
+![DuckLineage Image](./readme-assets/duck-lineage-image.webp)
+
+![DuckLineage Banner](./readme-assets/duck-lineage-banner.gif)
+
+[![Build](https://github.com/ilum-cloud/duck_lineage/actions/workflows/MainDistributionPipeline.yml/badge.svg)](https://github.com/ilum-cloud/duck_lineage/actions/workflows/MainDistributionPipeline.yml)
+[![DuckDB Community Extension](https://img.shields.io/badge/DuckDB-Community_Extension-FFF000?logo=duckdb)](https://community-extensions.duckdb.org)
+[![OpenLineage](https://img.shields.io/badge/OpenLineage-compatible-5B4AE4)](https://openlineage.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Built by ILUM](https://img.shields.io/badge/Built_by-ILUM-5280FF)](https://ilum.cloud)
+
 # DuckLineage Extension for DuckDB
 
-This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
-
----
-
 This is an extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
+
+> DuckLineage is developed by [ILUM](https://ilum.cloud), the free data lakehouse platform for a cloud native world.
 
 ## Supported Features
 
@@ -65,6 +73,7 @@ SET duck_lineage_url='http://localhost:5000/api/v1/lineage';
 -- SET duck_lineage_max_retries=3;           -- HTTP retry attempts (default: 3)
 -- SET duck_lineage_max_queue_size=10000;    -- Max pending events before dropping (default: 10000)
 -- SET duck_lineage_timeout=10;              -- HTTP request timeout in seconds (default: 10)
+-- SET duck_lineage_exclude_dataset_prefixes='__ducklake_metadata_'; -- Comma-separated prefixes to exclude from lineage events
 ```
 
 Execute your analytical queries. The extension will automatically trace them.
@@ -134,45 +143,9 @@ make test-all
 
 See [test/README.md](test/README.md) for detailed testing documentation.
 
-### Installing the deployed binaries
+## Extension development
 
-To install your extension binaries from S3, you will need to do two things. Firstly, DuckDB should be launched with the
-`allow_unsigned_extensions` option set to true. How to set this will depend on the client you're using. Some examples:
-
-CLI:
-
-```shell
-duckdb -unsigned
-```
-
-Python:
-
-```python
-con = duckdb.connect(':memory:', config={'allow_unsigned_extensions' : 'true'})
-```
-
-NodeJS:
-
-```js
-db = new duckdb.Database(":memory:", { allow_unsigned_extensions: "true" });
-```
-
-Secondly, you will need to set the repository endpoint in DuckDB to the HTTP url of your bucket + version of the extension
-you want to install. To do this run the following SQL query in DuckDB:
-
-```sql
-SET custom_extension_repository='bucket.s3.eu-west-1.amazonaws.com/<your_extension_name>/latest';
-```
-
-Note that the `/latest` path will allow you to install the latest extension version available for your current version of
-DuckDB. To specify a specific version, you can pass the version instead.
-
-After running these steps, you can install and load your extension using the regular INSTALL/LOAD commands in DuckDB:
-
-```sql
-INSTALL duck_lineage;
-LOAD duck_lineage;
-```
+This repository is based on https://github.com/duckdb/extension-template, check it out if you want to build and ship your own DuckDB extension.
 
 # Extension updating
 
@@ -185,7 +158,6 @@ as follows:
   - `./extension-ci-tools` should be set to updated branch corresponding to latest DuckDB release. So if you're building for DuckDB `v1.1.0` there will be a branch in `extension-ci-tools` named `v1.1.0` to which you should check out.
 - Bump versions in `./github/workflows`
   - `duckdb_version` input in `duckdb-stable-build` job in `MainDistributionPipeline.yml` should be set to latest tagged release
-  - `duckdb_version` input in `duckdb-stable-deploy` job in `MainDistributionPipeline.yml` should be set to latest tagged release
   - the reusable workflow `duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml` for the `duckdb-stable-build` job should be set to latest tagged release
 
 # API changes
