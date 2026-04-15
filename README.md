@@ -1,3 +1,7 @@
+![DuckLineage Image](./readme-assets/duck-lineage-image.webp)
+
+![DuckLineage Banner](./readme-assets/duck-lineage-banner.gif)
+
 # DuckLineage Extension for DuckDB
 
 This is an extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
