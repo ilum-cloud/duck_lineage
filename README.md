@@ -12,7 +12,7 @@
 
 This is an extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
 
-> DuckLineage is developed by [ILUM](https://ilum.cloud), the data lakehouse platform for analytics and AI.
+> DuckLineage is developed by [ILUM](https://ilum.cloud), the free data lakehouse platform for a cloud native world.
 
 ## Supported Features
 
