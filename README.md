@@ -2,9 +2,17 @@
 
 ![DuckLineage Banner](./readme-assets/duck-lineage-banner.gif)
 
+[![Build](https://github.com/ilum-cloud/duck_lineage/actions/workflows/MainDistributionPipeline.yml/badge.svg)](https://github.com/ilum-cloud/duck_lineage/actions/workflows/MainDistributionPipeline.yml)
+[![DuckDB Community Extension](https://img.shields.io/badge/DuckDB-Community_Extension-FFF000?logo=duckdb)](https://community-extensions.duckdb.org)
+[![OpenLineage](https://img.shields.io/badge/OpenLineage-compatible-5B4AE4)](https://openlineage.io)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Built by ILUM](https://img.shields.io/badge/Built_by-ILUM-5280FF)](https://ilum.cloud)
+
 # DuckLineage Extension for DuckDB
 
 This is an extension for [DuckDB](https://duckdb.org/) that automatically captures and emits [OpenLineage](https://openlineage.io/) events for every query executed. This enables automated data lineage, governance, and observability for DuckDB workloads.
+
+> DuckLineage is developed by [ILUM](https://ilum.cloud), the data lakehouse platform for analytics and AI.
 
 ## Supported Features
 
