@@ -75,15 +75,13 @@ def test_special_characters_in_names(lineage_connection, marquez_client):
     conn = lineage_connection
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE "my-special-table" (
             "column-with-dashes" INT,
             "column.with.dots" VARCHAR,
             "column with spaces" DECIMAL(10,2)
         )
-    """
-    )
+    """)
     conn.execute("INSERT INTO \"my-special-table\" VALUES (1, 'test', 99.99)")
 
     result = conn.execute('SELECT COUNT(*) FROM "my-special-table"').fetchone()
@@ -137,14 +135,12 @@ def test_transaction_rollback(lineage_connection, marquez_client):
     conn = lineage_connection
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE accounts (
             account_id INT,
             balance DECIMAL(10,2)
         )
-    """
-    )
+    """)
     conn.execute("INSERT INTO accounts VALUES (1, 1000.00)")
 
     conn.execute("BEGIN TRANSACTION")
@@ -203,35 +199,29 @@ def test_null_values_handling(lineage_connection, marquez_client):
     conn = lineage_connection
     namespace = conn.execute("SELECT current_setting('duck_lineage_namespace')").fetchone()[0]
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE nullable_data (
             id INT,
             name VARCHAR,
             value INT,
             metadata VARCHAR
         )
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         INSERT INTO nullable_data VALUES
             (1, 'Alice', NULL, NULL),
             (2, NULL, 100, 'meta')
-    """
-    )
+    """)
 
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE filtered_data AS
         SELECT
             COALESCE(name, 'Unknown') as name,
             COALESCE(value, 0) as value
         FROM nullable_data
         WHERE id IS NOT NULL
-    """
-    )
+    """)
 
     result = conn.execute("SELECT COUNT(*) FROM filtered_data").fetchone()
     assert result[0] == 2

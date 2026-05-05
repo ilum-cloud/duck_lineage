@@ -5,7 +5,7 @@ description = "DuckDB extension for OpenLineage integration"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "black==24.*",
+    "black>=26.3.1",
     "clang-format==11.0.1",
     "cmake-format>=0.6.13",
     "cxxheaderparser>=1.7.0",
@@ -16,14 +16,20 @@ dependencies = [
 
 [project.optional-dependencies]
 test = [
-    "pytest>=8.0.0",
+    "pytest>=9.0.3",
     "pytest-timeout>=2.2.0",
     "pytest-asyncio>=0.23.0",
     "duckdb==1.5.1",
-    "requests>=2.31.0",
+    "requests>=2.33.0",
     "pyyaml>=6.0",
 ]
-tidy = ["pybind11[global]>=3.0.1"]
+tidy = ["pybind11[global]>=3.0.1", "clang-tidy>=20.1.0"]
+
+[tool.black]
+# Black 26 defaults --target-version to py314 and emits a Python 3.13-vs-3.14
+# AST safety-check warning when invoked from a 3.13 venv. Pinning the target
+# silences the warning without changing how files are formatted in CI.
+target-version = ["py311", "py312", "py313"]
 
 [tool.pytest.ini_options]
 testpaths = ["test/tests"]
