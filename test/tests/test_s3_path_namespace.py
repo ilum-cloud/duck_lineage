@@ -22,6 +22,7 @@ import time
 import uuid
 
 import pytest
+import requests
 
 MINIO_ENDPOINT = "localhost:9000"
 MINIO_ACCESS_KEY = "minioadmin"
@@ -73,21 +74,78 @@ def _find_copy_event(events):
     return None
 
 
-def _wait_for_copy_event(marquez_client, namespace, timeout_seconds=30):
-    """Poll until the read_parquet+COPY-TO START event lands in Marquez."""
+def _fetch_namespace_events(marquez_client, namespace, limit=500):
+    """
+    Fetch lineage events from Marquez and filter to the given namespace.
+
+    Uses a much higher limit than MarquezTestClient._fetch_events (default 100)
+    because in a CI run with many prior tests our events can fall outside a
+    100-event window — Marquez paginates events/lineage in roughly insertion
+    order, so the fixed-limit filter would silently drop our results and the
+    test would fail with `Events seen: []`.
+    """
+    url = f"{marquez_client.url}/api/v1/events/lineage"
+    resp = requests.get(url, params={"limit": limit}, timeout=10)
+    resp.raise_for_status()
+    all_events = resp.json().get("events", [])
+    return [e for e in all_events if (e.get("job") or {}).get("namespace") == namespace]
+
+
+def _fetch_events_unfiltered(marquez_client, limit=20):
+    """Diagnostic helper: fetch the most recent events across all namespaces."""
+    url = f"{marquez_client.url}/api/v1/events/lineage"
+    resp = requests.get(url, params={"limit": limit}, timeout=10)
+    resp.raise_for_status()
+    return resp.json().get("events", [])
+
+
+def _wait_for_event_matching(marquez_client, namespace, predicate, timeout_seconds=60):
+    """Poll until any event for the namespace matches predicate(event) -> bool."""
     deadline = time.time() + timeout_seconds
     last_events = []
     while time.time() < deadline:
         try:
-            events = marquez_client._fetch_events(namespace)
+            events = _fetch_namespace_events(marquez_client, namespace)
         except Exception:
             events = []
         last_events = events
-        ev = _find_copy_event(events)
-        if ev is not None:
-            return ev, events
+        for ev in events:
+            if predicate(ev):
+                return ev, events
         time.sleep(1)
     return None, last_events
+
+
+def _wait_for_copy_event(marquez_client, namespace, timeout_seconds=60):
+    """Poll until the read_parquet+COPY-TO START event lands in Marquez."""
+    return _wait_for_event_matching(
+        marquez_client, namespace, lambda ev: _find_copy_event([ev]) is not None, timeout_seconds=timeout_seconds
+    )
+
+
+def _diag_dump(marquez_client, namespace):
+    """Build a diagnostic message for failures: what we see for our namespace + what Marquez has globally."""
+    try:
+        ours = _fetch_namespace_events(marquez_client, namespace, limit=500)
+    except Exception as e:
+        ours = f"<fetch error: {e!r}>"
+    try:
+        recent = _fetch_events_unfiltered(marquez_client, limit=10)
+        recent_summary = [
+            (
+                e.get("eventType"),
+                ((e.get("job") or {}).get("namespace")),
+                ((e.get("job") or {}).get("name")),
+            )
+            for e in recent
+        ]
+    except Exception as e:
+        recent_summary = f"<fetch error: {e!r}>"
+    return (
+        f"\n  namespace under test = {namespace!r}"
+        f"\n  events in our namespace = {ours!r}"
+        f"\n  most recent events across ALL namespaces (top 10) = {recent_summary!r}"
+    )
 
 
 @pytest.mark.integration
@@ -116,6 +174,23 @@ def test_s3_read_and_copy_to_namespace(s3_connection, marquez_client):
     # Seed: write a parquet file into the source prefix on MinIO.
     conn.execute(f"COPY (SELECT 1 AS a, 'x' AS b) TO '{src_path}' (FORMAT PARQUET)")
 
+    # Pre-flight: the seed write must reach Marquez before we run the repro.
+    # If this times out, lineage events aren't reaching Marquez at all (URL
+    # misconfigured, port unreachable, namespace mismatch, worker thread
+    # backlog, etc.) — fail loud here instead of vaguely later.
+    seed_ev, _seed_events = _wait_for_event_matching(
+        marquez_client,
+        namespace,
+        lambda ev: ev.get("eventType") == "START"
+        and src_path in (((ev.get("job") or {}).get("facets") or {}).get("sql", {}).get("query", "")),
+        timeout_seconds=60,
+    )
+    assert seed_ev is not None, (
+        f"Seed COPY to {src_path!r} did not produce a START event in Marquez within 60s. "
+        f"Lineage events for this connection are not reaching Marquez."
+        f"{_diag_dump(marquez_client, namespace)}"
+    )
+
     # Bug repro — matches the SQL from the issue.
     conn.execute(f"""
         COPY (
@@ -123,13 +198,11 @@ def test_s3_read_and_copy_to_namespace(s3_connection, marquez_client):
         ) TO '{dst_path}' (FORMAT PARQUET)
         """)
 
-    # Poll until our specific read_parquet+COPY-TO START event lands. Using
-    # wait_for_events alone would race: the seed write emits a START+COMPLETE
-    # pair that satisfies min_events before the repro's events get ingested.
-    copy_event, events = _wait_for_copy_event(marquez_client, namespace, timeout_seconds=30)
+    # Poll until our specific read_parquet+COPY-TO START event lands.
+    copy_event, events = _wait_for_copy_event(marquez_client, namespace, timeout_seconds=60)
     assert copy_event is not None, (
-        f"Could not find a START event with read_parquet+COPY TO s3:// SQL. "
-        f"Events seen: {[(e.get('eventType'), ((e.get('job') or {}).get('facets') or {}).get('sql', {}).get('query', '')[:80]) for e in events]}"
+        f"Could not find a START event with read_parquet+COPY TO s3:// SQL within 60s."
+        f"{_diag_dump(marquez_client, namespace)}"
     )
 
     inputs = copy_event.get("inputs") or []
@@ -188,23 +261,6 @@ def test_s3_read_and_copy_to_namespace(s3_connection, marquez_client):
             ), f"columnLineage source name for column {col_name!r} should be {expected_input_name!r}, got {src!r}"
 
 
-def _wait_for_event_matching(marquez_client, namespace, predicate, timeout_seconds=30):
-    """Poll until any event for the namespace matches predicate(event) -> bool."""
-    deadline = time.time() + timeout_seconds
-    last_events = []
-    while time.time() < deadline:
-        try:
-            events = marquez_client._fetch_events(namespace)
-        except Exception:
-            events = []
-        last_events = events
-        for ev in events:
-            if predicate(ev):
-                return ev, events
-        time.sleep(1)
-    return None, last_events
-
-
 @pytest.mark.integration
 def test_s3_multi_file_glob_inputs(s3_connection, marquez_client):
     """
@@ -241,10 +297,10 @@ def test_s3_multi_file_glob_inputs(s3_connection, marquez_client):
         ]
         return len(s3_inputs) == 2
 
-    ev, events = _wait_for_event_matching(marquez_client, namespace, _has_two_split_inputs, timeout_seconds=30)
+    ev, events = _wait_for_event_matching(marquez_client, namespace, _has_two_split_inputs, timeout_seconds=60)
     assert ev is not None, (
-        f"Did not see a CREATE TABLE multi_glob START event with two split s3 inputs. "
-        f"Last events: {[(e.get('eventType'), [(d.get('namespace'), d.get('name')) for d in (e.get('inputs') or [])]) for e in events]}"
+        f"Did not see a CREATE TABLE multi_glob START event with two split s3 inputs within 60s."
+        f"{_diag_dump(marquez_client, namespace)}"
     )
 
     inputs = ev["inputs"]
@@ -290,10 +346,10 @@ def test_s3a_scheme_normalised_to_s3(s3_connection, marquez_client):
                 return True
         return False
 
-    ev, events = _wait_for_event_matching(marquez_client, namespace, _has_normalised_input, timeout_seconds=30)
+    ev, events = _wait_for_event_matching(marquez_client, namespace, _has_normalised_input, timeout_seconds=60)
     assert ev is not None, (
-        f"Expected an input with namespace={expected_ns!r}, name={expected_name!r} (s3a normalised to s3). "
-        f"Last events: {[(e.get('eventType'), [(d.get('namespace'), d.get('name')) for d in (e.get('inputs') or [])]) for e in events]}"
+        f"Expected an input with namespace={expected_ns!r}, name={expected_name!r} "
+        f"(s3a normalised to s3) within 60s.{_diag_dump(marquez_client, namespace)}"
     )
 
     # Belt-and-braces: nothing should leak the literal s3a scheme into the dataset key.
