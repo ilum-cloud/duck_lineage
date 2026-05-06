@@ -276,4 +276,27 @@ CatalogInfo ExtractCatalogInfo(Catalog &catalog);
 /// @note Prepends "file://" to local file paths that don't have a scheme.
 std::string FormatDatabasePath(const std::string &catalog_path);
 
+/// @brief OpenLineage dataset identifier (namespace + name pair).
+struct DatasetIdentifier {
+	std::string ns; // namespace (avoids C++ keyword)
+	std::string name;
+};
+
+/// @brief Split a path/URI into an OpenLineage (namespace, name) pair per
+///        https://openlineage.io/docs/spec/naming/.
+/// @param path The raw path or URI from a DuckDB scan or COPY-TO operator.
+/// @return DatasetIdentifier with namespace and name.
+/// @note Mappings:
+///   - s3://{bucket}/{key}      -> {"s3://{bucket}", "{key}"}
+///   - s3a://{bucket}/{key}     -> {"s3://{bucket}", "{key}"} (s3a normalised to s3)
+///   - gs://{bucket}/{key}      -> {"gs://{bucket}", "{key}"}
+///   - abfss://{c}@{a}.dfs.../path -> {"abfss://{c}@{a}.dfs...", "path"}
+///   - wasbs://{c}@{a}.dfs.../key  -> {"wasbs://{c}@{a}.dfs...", "key"}
+///   - hdfs://{host}:{port}/path   -> {"hdfs://{host}:{port}", "path"}
+///   - file:///abs/path         -> {"file", "abs/path"}
+///   - /local/abs or relative   -> {"file", path}        (preserves prior behaviour)
+///   - empty                    -> {"file", "unknown"}   (preserves prior fallback)
+///   - unknown scheme://x/y     -> {"file", "scheme://x/y"} (fail-safe; do not silently lose URL)
+DatasetIdentifier SplitDatasetPath(const std::string &path);
+
 } // namespace duckdb
