@@ -382,17 +382,16 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 			column_names = get.names;
 		}
 	} else {
-		// File scan (read_csv, read_parquet, etc.) or table function
-		dataset_ns = "file";
-
+		// File scan (read_csv, read_parquet, etc.) or table function.
 		// Try to extract file path from MultiFileBindData (same pattern as optimizer)
+		string raw_path;
 		if (get.bind_data) {
 			try {
 				auto *multi_file_data = dynamic_cast<MultiFileBindData *>(get.bind_data.get());
 				if (multi_file_data && multi_file_data->file_list) {
 					auto file_paths = multi_file_data->file_list->GetPaths();
 					if (!file_paths.empty()) {
-						dataset_name = file_paths[0].path;
+						raw_path = file_paths[0].path;
 					}
 				}
 			} catch (...) {
@@ -402,8 +401,17 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 				}
 			}
 		}
-		if (dataset_name.empty()) {
+
+		if (raw_path.empty()) {
+			// Table function with no resolvable path; preserve prior fallback.
+			dataset_ns = "file";
 			dataset_name = get.function.name;
+		} else {
+			// Split URI-style paths so columnLineage.inputFields[] uses the
+			// same (namespace, name) key as the top-level inputs[] entry.
+			auto id = SplitDatasetPath(raw_path);
+			dataset_ns = id.ns;
+			dataset_name = id.name;
 		}
 
 		// Use get.names for column name lookup
