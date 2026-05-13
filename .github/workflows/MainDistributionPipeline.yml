@@ -4,7 +4,7 @@
 name: Main Extension Distribution Pipeline
 on:
   push:
-    branches: [main, next]
+    branches: [main, next, '1.4-andium']
     paths-ignore:
       - '**.md'
       - 'LICENSE'
