@@ -931,16 +931,12 @@ public:
 								}
 							}
 
-							// Add each file as an input dataset
+							// Add each file as an input dataset, splitting URI-style
+							// paths into spec-compliant (namespace, name) pairs per
+							// https://openlineage.io/docs/spec/naming/.
 							for (const auto &file_info : file_paths) {
-								string file_path = file_info.path;
-
-								// Use "file" as namespace for file-based inputs
-								string file_namespace = "file";
-
-								// Add the file as an input dataset
-								// Using simplified approach without catalog facets for files
-								builder.AddInputDataset(file_namespace, file_path, fields);
+								auto id = SplitDatasetPath(file_info.path);
+								builder.AddInputDataset(id.ns, id.name, fields);
 							}
 						}
 					} catch (...) {
@@ -1292,16 +1288,17 @@ public:
 				}
 			}
 
-			// Use "file" namespace and the configured file path as dataset name
-			// Note: for multi-file outputs (thread/partitioned), DuckDB manages actual paths.
-			// We record the base path specified in the COPY TO command.
-			string file_namespace = "file";
-			string dataset_name = copy_to.file_path.empty() ? "unknown" : copy_to.file_path;
+			// Split the COPY-TO target path into spec-compliant (namespace, name).
+			// For multi-file outputs (thread/partitioned), DuckDB manages actual
+			// paths; we record the base path specified in the COPY TO command.
+			auto id = SplitDatasetPath(copy_to.file_path);
 
-			builder.AddOutputDataset(file_namespace, dataset_name, fields);
+			builder.AddOutputDataset(id.ns, id.name, fields);
 
-			// Mark lifecycle: exporting typically creates or overwrites the target file
-			builder.AddOutputDatasetFacet_LifecycleStateChange(file_namespace, dataset_name, "OVERWRITE");
+			// Mark lifecycle: exporting typically creates or overwrites the target.
+			// Must use the same (namespace, name) key — the lifecycle facet is
+			// matched by that pair inside the builder.
+			builder.AddOutputDatasetFacet_LifecycleStateChange(id.ns, id.name, "OVERWRITE");
 		}
 	}
 };
