@@ -448,4 +448,44 @@ std::string FormatDatabasePath(const std::string &catalog_path) {
 	return "file://" + catalog_path;
 }
 
+DatasetIdentifier SplitDatasetPath(const std::string &path) {
+	if (path.empty()) {
+		return {"file", "unknown"};
+	}
+
+	auto scheme_end = path.find("://");
+	if (scheme_end == std::string::npos) {
+		// Local path or relative path; preserve current behaviour.
+		return {"file", path};
+	}
+
+	std::string scheme = path.substr(0, scheme_end);
+	std::string rest = path.substr(scheme_end + 3);
+
+	// Normalise s3a -> s3 to match existing Hive-on-S3 path handling.
+	if (scheme == "s3a") {
+		scheme = "s3";
+	}
+
+	if (scheme == "file") {
+		// file:///abs/path -> name = "abs/path" (without leading slash);
+		// keep namespace = "file" to preserve current local-file behaviour.
+		return {"file", rest};
+	}
+
+	// Authority is everything before the first '/'; remainder is the key/path.
+	auto slash = rest.find('/');
+	std::string authority = (slash == std::string::npos) ? rest : rest.substr(0, slash);
+	std::string remainder = (slash == std::string::npos) ? std::string() : rest.substr(slash + 1);
+
+	if (scheme == "s3" || scheme == "gs" || scheme == "abfss" || scheme == "wasbs" || scheme == "hdfs") {
+		return {scheme + "://" + authority, remainder};
+	}
+
+	// Unknown scheme: fail-safe — keep the full URL so we never silently
+	// strip information, but flag it under the local "file" namespace so it
+	// is at least visible.
+	return {"file", path};
+}
+
 } // namespace duckdb
