@@ -126,6 +126,7 @@ def tls_backend(tmp_path):
 
     server = HTTPServer(("127.0.0.1", 0), _Handler)
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(certfile=str(cert), keyfile=str(key))
     server.socket = context.wrap_socket(server.socket, server_side=True)
     port = server.server_address[1]
