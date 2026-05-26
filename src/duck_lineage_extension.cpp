@@ -65,6 +65,26 @@ static void SetDuckLineageExcludeDatasetPrefixes(ClientContext &context, SetScop
 	LineageClient::Get().SetExcludeDatasetPrefixes(parameter.GetValue<string>());
 }
 
+/// @brief Callback for setting the CA certificate bundle used to verify the backend's TLS certificate.
+static void SetDuckLineageCaCertFile(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetCaCertFile(parameter.GetValue<string>());
+}
+
+/// @brief Callback for setting the CA certificate directory used to verify the backend's TLS certificate.
+static void SetDuckLineageCaCertDir(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetCaCertDir(parameter.GetValue<string>());
+}
+
+/// @brief Callback for enabling/disabling TLS peer/host verification.
+static void SetDuckLineageSslVerify(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetSslVerify(parameter.GetValue<bool>());
+}
+
+/// @brief Callback for setting the proxy used for OpenLineage requests.
+static void SetDuckLineageProxy(ClientContext &context, SetScope scope, Value &parameter) {
+	LineageClient::Get().SetProxy(parameter.GetValue<string>());
+}
+
 //===--------------------------------------------------------------------===//
 // Extension Loading
 //===--------------------------------------------------------------------===//
@@ -109,6 +129,28 @@ static void LoadInternal(ExtensionLoader &loader) {
 	                          "Comma-separated prefixes of dataset names to exclude from lineage events",
 	                          LogicalType::VARCHAR, Value("__ducklake_metadata_"),
 	                          SetDuckLineageExcludeDatasetPrefixes);
+
+	// SET duck_lineage_ca_cert_file = '/path/to/ca-bundle.pem'
+	config.AddExtensionOption("duck_lineage_ca_cert_file",
+	                          "Path to a CA certificate bundle used to verify the OpenLineage backend's TLS "
+	                          "certificate (falls back to the global ca_cert_file setting and CA env vars)",
+	                          LogicalType::VARCHAR, Value(""), SetDuckLineageCaCertFile);
+
+	// SET duck_lineage_ca_cert_dir = '/etc/ssl/certs'
+	config.AddExtensionOption("duck_lineage_ca_cert_dir",
+	                          "Path to a directory of CA certificates used to verify the OpenLineage backend's TLS "
+	                          "certificate",
+	                          LogicalType::VARCHAR, Value(""), SetDuckLineageCaCertDir);
+
+	// SET duck_lineage_ssl_verify = true
+	config.AddExtensionOption("duck_lineage_ssl_verify",
+	                          "Verify the OpenLineage backend's TLS certificate (disable only for development/testing)",
+	                          LogicalType::BOOLEAN, Value(true), SetDuckLineageSslVerify);
+
+	// SET duck_lineage_proxy = 'http://proxy.company.com:8080'
+	config.AddExtensionOption("duck_lineage_proxy",
+	                          "Proxy URL to route OpenLineage requests through (empty honors proxy env vars)",
+	                          LogicalType::VARCHAR, Value(""), SetDuckLineageProxy);
 
 	// Register the optimizer extension that injects lineage tracking
 	OptimizerExtension extension;

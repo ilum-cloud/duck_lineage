@@ -9,6 +9,7 @@
 #include "lineage_client.hpp"
 #include "duckdb/common/string_util.hpp"
 #include <curl/curl.h>
+#include <cstdlib>
 #include <iostream>
 #include <chrono>
 #include <thread>
@@ -142,6 +143,31 @@ void LineageClient::SetExcludeDatasetPrefixes(const std::string &prefixes_csv) {
 	}
 }
 
+void LineageClient::SetCaCertFile(std::string path) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	ca_cert_file = std::move(path);
+}
+
+void LineageClient::SetCaCertDir(std::string path) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	ca_cert_dir = std::move(path);
+}
+
+void LineageClient::SetInheritedCaCertFile(std::string path) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	inherited_ca_cert_file = std::move(path);
+}
+
+void LineageClient::SetSslVerify(bool verify) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	ssl_verify = verify;
+}
+
+void LineageClient::SetProxy(std::string proxy) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	proxy_url = std::move(proxy);
+}
+
 //===--------------------------------------------------------------------===//
 // Configuration Getters (Thread-Safe)
 //===--------------------------------------------------------------------===//
@@ -195,6 +221,26 @@ size_t LineageClient::GetDroppedEvents() const {
 	return dropped_events;
 }
 
+std::string LineageClient::GetCaCertFile() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return ca_cert_file;
+}
+
+std::string LineageClient::GetCaCertDir() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return ca_cert_dir;
+}
+
+bool LineageClient::GetSslVerify() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return ssl_verify;
+}
+
+std::string LineageClient::GetProxy() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return proxy_url;
+}
+
 //===--------------------------------------------------------------------===//
 // HTTP Request Handling
 //===--------------------------------------------------------------------===//
@@ -212,12 +258,22 @@ void LineageClient::PostToBackend(const std::string &payload) {
 	std::string key;
 	size_t retries;
 	int64_t timeout;
+	std::string ca_file;
+	std::string ca_dir;
+	std::string inherited_ca_file;
+	std::string proxy;
+	bool verify;
 	{
 		std::lock_guard<std::mutex> lock(config_mutex);
 		url = duck_lineage_url;
 		key = api_key;
 		retries = max_retries;
 		timeout = timeout_seconds;
+		ca_file = ca_cert_file;
+		ca_dir = ca_cert_dir;
+		inherited_ca_file = inherited_ca_cert_file;
+		proxy = proxy_url;
+		verify = ssl_verify;
 	}
 
 	if (url.empty()) {
@@ -258,6 +314,66 @@ void LineageClient::PostToBackend(const std::string &payload) {
 	// Follow redirects
 	curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
 	curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 5L);
+
+	// TLS / proxy configuration.
+	// The bundled libcurl is statically linked against OpenSSL and may not have a usable
+	// default CA store on all platforms (notably macOS), so HTTPS verification fails unless we
+	// provide a CA bundle. Resolve the CA file with the following precedence:
+	//   1. duck_lineage_ca_cert_file (explicit)
+	//   2. DuckDB's global "ca_cert_file" setting (inherited from httpfs config)
+	//   3. CURL_CA_BUNDLE environment variable
+	//   4. SSL_CERT_FILE environment variable
+	//   5. libcurl's compiled-in default
+	std::string resolved_ca_file = ca_file;
+	const char *ca_file_source = "duck_lineage_ca_cert_file";
+	if (resolved_ca_file.empty() && !inherited_ca_file.empty()) {
+		resolved_ca_file = inherited_ca_file;
+		ca_file_source = "ca_cert_file setting";
+	}
+	if (resolved_ca_file.empty()) {
+		if (const char *env = std::getenv("CURL_CA_BUNDLE")) {
+			resolved_ca_file = env;
+			ca_file_source = "CURL_CA_BUNDLE";
+		} else if (const char *ssl_env = std::getenv("SSL_CERT_FILE")) {
+			resolved_ca_file = ssl_env;
+			ca_file_source = "SSL_CERT_FILE";
+		}
+	}
+	if (!resolved_ca_file.empty()) {
+		curl_easy_setopt(curl, CURLOPT_CAINFO, resolved_ca_file.c_str());
+		if (IsDebug()) {
+			std::cout << "OpenLineage Debug: Using CA bundle from " << ca_file_source << ": " << resolved_ca_file
+			          << '\n';
+		}
+	}
+
+	// Resolve the CA directory: explicit duck_lineage_ca_cert_dir, then SSL_CERT_DIR env var.
+	std::string resolved_ca_dir = ca_dir;
+	if (resolved_ca_dir.empty()) {
+		if (const char *env = std::getenv("SSL_CERT_DIR")) {
+			resolved_ca_dir = env;
+		}
+	}
+	if (!resolved_ca_dir.empty()) {
+		curl_easy_setopt(curl, CURLOPT_CAPATH, resolved_ca_dir.c_str());
+	}
+
+	// Optionally disable TLS verification (insecure — intended for development/testing only).
+	if (!verify) {
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
+		curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
+		if (IsDebug()) {
+			std::cerr << "OpenLineage Debug: TLS certificate verification is DISABLED "
+			             "(duck_lineage_ssl_verify=false). This is insecure."
+			          << '\n';
+		}
+	}
+
+	// Route through an explicit proxy when configured. When empty, libcurl still honors the
+	// standard http_proxy/https_proxy/ALL_PROXY/NO_PROXY environment variables.
+	if (!proxy.empty()) {
+		curl_easy_setopt(curl, CURLOPT_PROXY, proxy.c_str());
+	}
 
 	// Retry loop with exponential backoff
 	bool success = false;

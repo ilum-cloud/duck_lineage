@@ -1513,6 +1513,17 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 		return;
 	}
 
+	// Inherit DuckDB's global "ca_cert_file" setting (registered by httpfs) so HTTPS
+	// backends that already work for httpfs also work here without extra configuration.
+	// An explicit duck_lineage_ca_cert_file still takes precedence (see PostToBackend).
+	// TryGetCurrentSetting returns a falsy result when the setting is not registered.
+	{
+		Value ca_cert_value;
+		if (input.context.TryGetCurrentSetting("ca_cert_file", ca_cert_value) && !ca_cert_value.IsNull()) {
+			LineageClient::Get().SetInheritedCaCertFile(ca_cert_value.ToString());
+		}
+	}
+
 	// Skip utility statements that don't involve data lineage
 	static const unordered_set<LogicalOperatorType> skip_types = {
 	    LogicalOperatorType::LOGICAL_SET,           LogicalOperatorType::LOGICAL_RESET,

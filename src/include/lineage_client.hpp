@@ -86,6 +86,31 @@ public:
 	/// @note Thread-safe. Datasets whose fully qualified name starts with any prefix are skipped.
 	void SetExcludeDatasetPrefixes(const std::string &prefixes_csv);
 
+	/// @brief Set the path to a CA certificate bundle file used to verify the backend's TLS certificate.
+	/// @param path Filesystem path to a PEM CA bundle (maps to CURLOPT_CAINFO). Empty clears it.
+	/// @note Thread-safe. Takes precedence over the inherited DuckDB ca_cert_file and CA env vars.
+	void SetCaCertFile(std::string path);
+
+	/// @brief Set the directory of CA certificates used to verify the backend's TLS certificate.
+	/// @param path Filesystem path to a CA directory (maps to CURLOPT_CAPATH). Empty clears it.
+	/// @note Thread-safe.
+	void SetCaCertDir(std::string path);
+
+	/// @brief Set the CA certificate file inherited from DuckDB's global "ca_cert_file" setting.
+	/// @param path Filesystem path to a PEM CA bundle, as configured for httpfs. Empty clears it.
+	/// @note Thread-safe. Used as a fallback when SetCaCertFile was not called explicitly.
+	void SetInheritedCaCertFile(std::string path);
+
+	/// @brief Enable or disable TLS peer/host verification for backend requests.
+	/// @param verify If false, disables CURLOPT_SSL_VERIFYPEER and CURLOPT_SSL_VERIFYHOST (insecure).
+	/// @note Thread-safe. Disabling verification is intended for development/testing only.
+	void SetSslVerify(bool verify);
+
+	/// @brief Set an HTTP/HTTPS proxy to route OpenLineage requests through.
+	/// @param proxy Proxy URL (e.g., "http://proxy.company.com:8080"; maps to CURLOPT_PROXY). Empty clears it.
+	/// @note Thread-safe. When empty, libcurl still honors the standard proxy environment variables.
+	void SetProxy(std::string proxy);
+
 	// ===== Accessor Methods =====
 
 	/// @brief Get the current OpenLineage backend URL.
@@ -127,6 +152,26 @@ public:
 	/// @return Vector of prefix strings.
 	/// @note Thread-safe.
 	std::vector<std::string> GetExcludeDatasetPrefixes() const;
+
+	/// @brief Get the explicitly configured CA certificate bundle path.
+	/// @return The configured CA bundle path (may be empty).
+	/// @note Thread-safe.
+	std::string GetCaCertFile() const;
+
+	/// @brief Get the explicitly configured CA certificate directory.
+	/// @return The configured CA directory (may be empty).
+	/// @note Thread-safe.
+	std::string GetCaCertDir() const;
+
+	/// @brief Check whether TLS peer/host verification is enabled.
+	/// @return True if verification is enabled (default), false otherwise.
+	/// @note Thread-safe.
+	bool GetSslVerify() const;
+
+	/// @brief Get the configured proxy URL.
+	/// @return The configured proxy URL (may be empty).
+	/// @note Thread-safe.
+	std::string GetProxy() const;
 
 	/// @brief Get the number of events dropped due to queue overflow.
 	/// @return Number of dropped events.
@@ -175,6 +220,11 @@ private:
 	int64_t timeout_seconds = 10;    ///< HTTP request timeout in seconds
 	size_t dropped_events = 0;       ///< Counter for dropped events (queue full)
 	std::vector<std::string> exclude_dataset_prefixes = {"__ducklake_metadata_"}; ///< Dataset name prefixes to exclude
+	std::string ca_cert_file;           ///< Explicit CA bundle path (duck_lineage_ca_cert_file)
+	std::string ca_cert_dir;            ///< Explicit CA directory path (duck_lineage_ca_cert_dir)
+	std::string inherited_ca_cert_file; ///< CA bundle inherited from DuckDB's global ca_cert_file setting
+	std::string proxy_url;              ///< Proxy URL for backend requests (duck_lineage_proxy)
+	bool ssl_verify = true;             ///< Verify TLS peer + host (default true)
 };
 
 } // namespace duckdb
