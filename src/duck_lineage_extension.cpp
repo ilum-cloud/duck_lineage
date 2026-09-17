@@ -73,6 +73,9 @@ static void SetDuckLineageExcludeDatasetPrefixes(ClientContext &context, SetScop
 /// @param loader The extension loader providing access to the database.
 /// @note Registers pragma functions, configuration options, and optimizer hooks.
 static void LoadInternal(ExtensionLoader &loader) {
+	// Initialize libcurl/OpenSSL before any other code in the extension can touch them
+	LineageClient::InitializeHttpLibraries();
+
 	// Register configuration options that users can set via SET statements
 	auto &config = loader.GetDatabaseInstance().config;
 
