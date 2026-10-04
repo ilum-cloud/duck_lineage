@@ -133,9 +133,15 @@ public:
 	/// @note Thread-safe.
 	size_t GetDroppedEvents() const;
 
-	/// @brief Signal the background worker to shut down.
-	/// @note The worker thread will finish processing remaining events before stopping.
-	/// @note This is called automatically in the destructor.
+	/// @brief Initialize libcurl and OpenSSL. Idempotent and thread-safe.
+	/// @note Must run before anything else in the extension touches OpenSSL, so it is called at extension load.
+	///       Disables OpenSSL's atexit cleanup, which would otherwise run while the worker is still sending events.
+	static void InitializeHttpLibraries();
+
+	/// @brief Stop the background worker and wait for it to finish.
+	/// @note The worker delivers the events that are still queued before stopping, but does not retry and gives
+	///       up on the first failed delivery, so an unreachable backend cannot hold up process exit.
+	/// @note Called automatically at process exit. Events sent afterwards are dropped.
 	void Shutdown();
 
 private:
@@ -143,7 +149,8 @@ private:
 	/// @note Initializes CURL, starts the background worker thread.
 	LineageClient();
 
-	/// @brief Destructor. Shuts down the worker thread and cleans up CURL.
+	/// @brief Destructor. Shuts down the worker thread.
+	/// @note Never runs for the singleton, which is intentionally leaked (see Get()).
 	~LineageClient();
 
 	/// @brief Background worker thread function.
@@ -152,8 +159,9 @@ private:
 
 	/// @brief Send an HTTP POST request to the OpenLineage backend.
 	/// @param payload JSON string to send in the request body.
-	/// @note Uses CURL to perform the HTTP request with a 5-second timeout.
-	void PostToBackend(const std::string &payload);
+	/// @return true if the backend accepted the event.
+	/// @note Retries with exponential backoff, except while shutting down.
+	bool PostToBackend(const std::string &payload);
 
 	// ===== Queue Management =====
 	std::mutex queue_mutex;              ///< Protects access to event_queue
