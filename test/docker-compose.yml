@@ -69,12 +69,14 @@ services:
       retries: 5
     profiles:
       - ducklake
+  # MinIO no longer publishes images to Docker Hub or quay.io; Chainguard builds them from source.
   minio:
-    image: minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
     container_name: minio
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      MC_HOST_local: http://minioadmin:minioadmin@localhost:9000
     command: server /data --console-address ":9001"
     ports:
       - "9000:9000"
@@ -87,10 +89,12 @@ services:
     profiles:
       - ducklake
   minio-init:
-    image: minio/mc:latest
+    # Distroless (no shell): mc is the entrypoint and the alias comes from MC_HOST_local
+    image: cgr.dev/chainguard/minio-client:latest
     container_name: minio-init
-    entrypoint: /bin/sh
-    command: -c "mc alias set local http://minio:9000 minioadmin minioadmin && mc mb --ignore-existing local/test-bucket"
+    environment:
+      MC_HOST_local: http://minioadmin:minioadmin@minio:9000
+    command: mb --ignore-existing local/test-bucket
     depends_on:
       minio:
         condition: service_healthy
