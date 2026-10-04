@@ -19,7 +19,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-DUCKDB_VERSION="v1.4.4"
+DUCKDB_VERSION="v1.4.5"
 MARQUEZ_API_PORT=5000
 MARQUEZ_ADMIN_PORT=5001
 MARQUEZ_UI_PORT=3000
