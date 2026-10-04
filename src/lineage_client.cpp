@@ -9,6 +9,7 @@
 #include "lineage_client.hpp"
 #include "duckdb/common/string_util.hpp"
 #include <curl/curl.h>
+#include <openssl/crypto.h>
 #include <cstdlib>
 #include <iostream>
 #include <chrono>
@@ -21,9 +22,30 @@ namespace duckdb {
 // Singleton Instance Management
 //===--------------------------------------------------------------------===//
 
+void LineageClient::InitializeHttpLibraries() {
+	static std::once_flag init_flag;
+	std::call_once(init_flag, [] {
+		// OpenSSL registers an atexit handler (OPENSSL_cleanup) the first time it is initialized. libcurl would do
+		// that lazily on the worker thread, i.e. after our own exit hook was registered, so at process exit OpenSSL
+		// was torn down *before* the worker finished draining the queue and the next HTTPS request crashed inside
+		// OpenSSL. Initialize it here, first, and opt out of its atexit cleanup: the OS reclaims the memory anyway.
+		OPENSSL_init_crypto(OPENSSL_INIT_NO_ATEXIT, nullptr);
+		// Must run once before any other thread uses libcurl.
+		curl_global_init(CURL_GLOBAL_DEFAULT);
+	});
+}
+
 LineageClient &LineageClient::Get() {
-	static LineageClient instance;
-	return instance;
+	// The instance is intentionally never destroyed. DuckDB objects that own a PhysicalLineageSentinel (prepared
+	// statements, pending results, connections held by statics of the host application) can be destroyed during
+	// static destruction, and the sentinel destructor calls back into this client. A function-local static object
+	// would already be gone at that point. Queued events are flushed by the atexit hook registered below.
+	static LineageClient *instance = [] {
+		auto *client = new LineageClient();
+		std::atexit([] { LineageClient::Get().Shutdown(); });
+		return client;
+	}();
+	return *instance;
 }
 
 //===--------------------------------------------------------------------===//
@@ -31,23 +53,27 @@ LineageClient &LineageClient::Get() {
 //===--------------------------------------------------------------------===//
 
 LineageClient::LineageClient() : shutdown_requested(false), duck_lineage_url(""), lineage_namespace("duckdb") {
+	InitializeHttpLibraries();
 	// Start the background worker thread to process events asynchronously
 	worker_thread = std::thread(&LineageClient::BackgroundWorker, this);
 }
 
 LineageClient::~LineageClient() {
-	// Request shutdown and wait for worker thread to finish
 	Shutdown();
-	if (worker_thread.joinable()) {
-		worker_thread.join();
-	}
 }
 
 void LineageClient::Shutdown() {
 	// Signal the worker thread to stop processing
-	shutdown_requested = true;
-	// Wake up the worker if it's waiting on the condition variable
+	{
+		std::lock_guard<std::mutex> lock(queue_mutex);
+		shutdown_requested = true;
+	}
+	// Wake up the worker if it's waiting on the condition variable or backing off between retries
 	queue_cv.notify_all();
+	// Wait for the worker to deliver what is still queued
+	if (worker_thread.joinable()) {
+		worker_thread.join();
+	}
 }
 
 //===--------------------------------------------------------------------===//
@@ -63,6 +89,12 @@ void LineageClient::SendEvent(std::string event_json) {
 	// Add the event to the queue for asynchronous processing
 	{
 		std::lock_guard<std::mutex> lock(queue_mutex);
+
+		// The worker is stopped at process exit; events emitted after that (e.g. by sentinels destroyed
+		// during static destruction) can no longer be delivered
+		if (shutdown_requested) {
+			return;
+		}
 
 		// Check if queue has reached maximum size
 		size_t max_size;
@@ -252,7 +284,7 @@ static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *use
 	return size * nmemb;
 }
 
-void LineageClient::PostToBackend(const std::string &payload) {
+bool LineageClient::PostToBackend(const std::string &payload) {
 	// Retrieve configuration (thread-safely)
 	std::string url;
 	std::string key;
@@ -280,7 +312,7 @@ void LineageClient::PostToBackend(const std::string &payload) {
 		if (IsDebug()) {
 			std::cerr << "OpenLineage Debug: OpenLineage URL is not configured. Event not sent." << '\n';
 		}
-		return;
+		return false;
 	}
 
 	CURL *curl = curl_easy_init();
@@ -288,7 +320,7 @@ void LineageClient::PostToBackend(const std::string &payload) {
 		if (IsDebug()) {
 			std::cerr << "OpenLineage Debug: Failed to initialize CURL." << '\n';
 		}
-		return;
+		return false;
 	}
 
 	// Build HTTP headers
@@ -430,6 +462,12 @@ void LineageClient::PostToBackend(const std::string &payload) {
 			}
 		}
 
+		// Don't hold up process exit with retries: if the backend is failing now, it is unlikely to recover
+		// within the next few hundred milliseconds
+		if (!success && shutdown_requested) {
+			break;
+		}
+
 		// Apply exponential backoff before retry (skip on last attempt or success)
 		if (!success && attempt < retries) {
 			// Exponential backoff: 100ms, 200ms, 400ms, 800ms, etc.
@@ -441,7 +479,10 @@ void LineageClient::PostToBackend(const std::string &payload) {
 			if (IsDebug()) {
 				std::cout << "OpenLineage Debug: Backing off for " << backoff_ms << "ms" << '\n';
 			}
-			std::this_thread::sleep_for(std::chrono::milliseconds(backoff_ms));
+			// Sleep, but wake up immediately when shutdown is requested
+			std::unique_lock<std::mutex> lock(queue_mutex);
+			queue_cv.wait_for(lock, std::chrono::milliseconds(backoff_ms),
+			                  [this] { return shutdown_requested.load(); });
 		}
 	}
 
@@ -452,6 +493,7 @@ void LineageClient::PostToBackend(const std::string &payload) {
 	// Cleanup CURL resources
 	curl_slist_free_all(headers);
 	curl_easy_cleanup(curl);
+	return success;
 }
 
 //===--------------------------------------------------------------------===//
@@ -479,7 +521,16 @@ void LineageClient::BackgroundWorker() {
 
 		// Send all events outside the lock
 		for (auto &payload : batch) {
-			PostToBackend(payload);
+			bool delivered = PostToBackend(payload);
+			if (!delivered && shutdown_requested) {
+				// The backend is unreachable while the process is exiting: the remaining events would fail
+				// the same way, each one delaying exit by up to the request timeout. Give up.
+				if (IsDebug()) {
+					std::cerr << "OpenLineage Debug: Delivery failed during shutdown. Dropping remaining events."
+					          << '\n';
+				}
+				return;
+			}
 		}
 	}
 }

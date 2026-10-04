@@ -11,6 +11,8 @@ supplied via ``duck_lineage_ca_cert_file`` or when verification is disabled.
 import shutil
 import ssl
 import subprocess
+import sys
+import textwrap
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -272,3 +274,66 @@ def test_https_self_signed_accepted_with_verify_disabled(extension_path, tls_bac
         assert _wait_for(tls_backend.received, count=1, timeout=10), "expected at least one delivered event"
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Process exit
+# ---------------------------------------------------------------------------
+# These run in a subprocess because they assert on how the interpreter exits.
+
+_EXIT_STATEMENTS = 20
+
+_EXIT_SCRIPT = textwrap.dedent("""
+    import sys
+    import duckdb
+
+    extension_path, url, ca_cert_file, statements = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
+    conn.execute(f"LOAD '{extension_path}'")
+    conn.execute(f"SET duck_lineage_url = '{url}'")
+    conn.execute(f"SET duck_lineage_ca_cert_file = '{ca_cert_file}'")
+    conn.execute("SET duck_lineage_timeout = 5")
+    conn.execute("CREATE TABLE exit_src AS SELECT range AS a FROM range(100)")
+    for i in range(statements - 1):
+        conn.execute(f"CREATE TABLE exit_out_{i} AS SELECT a * {i} AS b FROM exit_src")
+    # Exit right away, while the worker thread still has events queued.
+    """)
+
+
+def _run_and_exit(extension_path, url, ca_cert_file):
+    started = time.time()
+    result = subprocess.run(
+        [sys.executable, "-c", _EXIT_SCRIPT, extension_path, url, ca_cert_file, str(_EXIT_STATEMENTS)],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    return result, time.time() - started
+
+
+@pytest.mark.integration
+def test_exit_with_queued_https_events_delivers_them_without_crashing(extension_path, tls_backend):
+    """
+    A process that exits while HTTPS events are still queued must not crash, and the events must arrive.
+
+    Regression test: OpenSSL's atexit cleanup used to run before the worker thread drained the queue,
+    so the next request segfaulted inside OpenSSL (exit code 139 / -11).
+    """
+    result, _ = _run_and_exit(extension_path, tls_backend.url, tls_backend.cert)
+
+    assert result.returncode == 0, f"process exited with {result.returncode}: {result.stderr[-2000:]}"
+    # One START and one COMPLETE event per statement
+    assert len(tls_backend.received) == 2 * _EXIT_STATEMENTS
+
+
+@pytest.mark.integration
+def test_exit_with_failing_https_backend_is_clean_and_fast(extension_path, tls_backend):
+    """
+    With a CA bundle that cannot be loaded every delivery fails, so the queue is always backed up at exit.
+    The process must still exit cleanly, and without retrying every queued event first.
+    """
+    result, elapsed = _run_and_exit(extension_path, tls_backend.url, "/nonexistent/ca-bundle.pem")
+
+    assert result.returncode == 0, f"process exited with {result.returncode}: {result.stderr[-2000:]}"
+    assert tls_backend.received == []
+    assert elapsed < 30, f"process took {elapsed:.1f}s to exit"
