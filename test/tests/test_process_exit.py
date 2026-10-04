@@ -20,7 +20,8 @@ import pytest
 
 _STATEMENTS = 20
 
-_EXIT_SCRIPT = textwrap.dedent("""
+_EXIT_SCRIPT = textwrap.dedent(
+    """
     import sys
     import duckdb
 
@@ -33,7 +34,8 @@ _EXIT_SCRIPT = textwrap.dedent("""
     for i in range(statements - 1):
         conn.execute(f"CREATE TABLE exit_out_{i} AS SELECT a * {i} AS b FROM exit_src")
     # Exit right away, while the worker thread still has events queued.
-    """)
+    """
+)
 
 
 class _RecordingHandler(BaseHTTPRequestHandler):
