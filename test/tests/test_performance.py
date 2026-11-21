@@ -40,6 +40,9 @@ def lineage_conn(extension_path):
     conn.execute("SET duck_lineage_url = 'http://192.0.2.1:1/api/v1/lineage'")
     conn.execute("SET duck_lineage_namespace = 'perf_test'")
     yield conn
+    # The worker would otherwise keep trying to deliver the (many) queued events to the unroutable address,
+    # delaying every event of the tests that run next. With no URL the rest of the queue is dropped right away.
+    conn.execute("SET duck_lineage_url = ''")
     conn.close()
 
 

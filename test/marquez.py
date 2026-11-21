@@ -115,6 +115,27 @@ class MarquezTestClient:
 
         return None
 
+    def wait_for_dataset_lifecycle(
+        self, namespace: str, name: str, state: str, timeout_seconds: int = 30
+    ) -> dict | None:
+        """
+        Wait until a dataset has fields and its lastLifecycleState is ``state``.
+
+        Returns the last dataset seen (which may be in another state) after the timeout, so that the caller's
+        assertions report what Marquez actually holds; None if the dataset never appeared.
+        """
+        start_time = time()
+        dataset = None
+        while time() - start_time < timeout_seconds:
+            try:
+                dataset = self.client.get_dataset(namespace, name)  # type: ignore
+            except Exception:
+                pass
+            if dataset and dataset.get("fields") and dataset.get("lastLifecycleState") == state:
+                return dataset
+            sleep(1)
+        return dataset
+
     def list_jobs(self, namespace: str) -> list[dict]:
         for i in range(self.retries):
             try:

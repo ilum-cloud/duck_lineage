@@ -30,7 +30,7 @@ def _setting(conn, name):
     return conn.execute(f"SELECT current_setting('{name}')").fetchone()[0]
 
 
-def _read_events(path, namespace, count, timeout=10.0):
+def _read_events(path, namespace, count, timeout=60.0):
     """
     Poll the file until it holds ``count`` events of ``namespace``.
 
@@ -54,6 +54,11 @@ def _restore_transport_defaults(extension_path):
     The LineageClient is a process-wide singleton, so configuration set here would otherwise leak into test
     files that run later in the same pytest session.
     """
+    conn = _new_connection(extension_path)
+    # Events left in the process-wide queue by earlier tests are delivered before ours. Without a URL, the ones
+    # still bound for an HTTP backend are dropped right away instead of holding ours up.
+    conn.execute("SET duck_lineage_url = ''")
+    conn.close()
     yield
     conn = _new_connection(extension_path)
     try:

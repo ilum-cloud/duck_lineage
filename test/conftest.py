@@ -194,11 +194,14 @@ def file_lineage(extension_path, tmp_path):
     namespace = f"file_lineage_{uuid.uuid4().hex[:8]}"
     conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
     conn.execute(f"LOAD '{extension_path}'")
+    # Events left in the process-wide queue by earlier tests are delivered before ours. Without a URL, the ones
+    # still bound for an HTTP backend are dropped right away instead of holding ours up.
+    conn.execute("SET duck_lineage_url = ''")
     conn.execute("SET duck_lineage_transport = 'file'")
     conn.execute(f"SET duck_lineage_file_path = '{path}'")
     conn.execute(f"SET duck_lineage_namespace = '{namespace}'")
 
-    def event(sql, event_type="COMPLETE", timeout=10.0):
+    def event(sql, event_type="COMPLETE", timeout=60.0):
         deadline = time.time() + timeout
         while True:
             for line in path.read_text().splitlines():
