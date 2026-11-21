@@ -20,6 +20,7 @@
 #include "duckdb/planner/operator/logical_create.hpp"
 #include "duckdb/planner/operator/logical_create_table.hpp"
 #include "duckdb/planner/operator/logical_copy_to_file.hpp"
+#include "duckdb/planner/operator/logical_merge_into.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/tableref.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
@@ -1507,6 +1508,33 @@ static void FindViewReferences(ClientContext &context, QueryNode &node, unordere
 	}
 }
 
+/// @brief Find the result column that holds the number of rows a statement wrote.
+/// @param root Root of the logical plan.
+/// @return The column index, or an invalid index when every result row is one row written (or the statement
+///         does not write anything).
+/// @note Without RETURNING, INSERT, CREATE TABLE AS, UPDATE, DELETE, MERGE and COPY return a single row with
+///       the count. COPY ... (RETURN_STATS) returns one row per written file, with the count in column 1.
+static optional_idx GetRowCountColumn(LogicalOperator &root) {
+	switch (root.type) {
+	case LogicalOperatorType::LOGICAL_INSERT:
+		return root.Cast<LogicalInsert>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_UPDATE:
+		return root.Cast<LogicalUpdate>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_DELETE:
+		return root.Cast<LogicalDelete>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_MERGE_INTO:
+		return root.Cast<LogicalMergeInto>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_CREATE_TABLE:
+		return optional_idx(0);
+	case LogicalOperatorType::LOGICAL_COPY_TO_FILE:
+		return root.Cast<LogicalCopyToFile>().return_type == CopyFunctionReturnType::WRITTEN_FILE_STATISTICS
+		           ? optional_idx(1)
+		           : optional_idx(0);
+	default:
+		return optional_idx();
+	}
+}
+
 void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_ptr<LogicalOperator> &plan) {
 	// Early exit if no plan to optimize
 	if (!plan) {
@@ -1971,7 +1999,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// ===== Inject the lineage sentinel into the plan =====
 	// Wrap the entire plan with a LogicalLineageSentinel operator
 	// This will track execution and emit COMPLETE/FAIL events
-	auto sentinel = make_uniq<LogicalLineageSentinel>(std::move(plan), runId, jobName, query, outputs);
+	auto row_count_column = GetRowCountColumn(*plan);
+	auto sentinel =
+	    make_uniq<LogicalLineageSentinel>(std::move(plan), runId, jobName, query, outputs, row_count_column);
 
 	// Resolve output types (propagate from child)
 	sentinel->ResolveOperatorTypes();

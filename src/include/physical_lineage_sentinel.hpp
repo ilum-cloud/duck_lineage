@@ -10,6 +10,7 @@
 #pragma once
 
 #include "duckdb/execution/physical_operator.hpp"
+#include "duckdb/common/optional_idx.hpp"
 #include <chrono>
 #include <nlohmann/json.hpp>
 
@@ -21,7 +22,7 @@ using json = nlohmann::json;
 /// @brief Physical operator that tracks execution and emits lineage events.
 ///
 /// This operator is a pass-through that doesn't modify data but tracks execution:
-/// - Counts rows processed during execution
+/// - Counts the rows the query wrote (for outputStatistics.rowCount)
 /// - Records execution timing
 /// - Emits COMPLETE event on successful completion (in destructor)
 /// - Emits FAIL event if an exception occurs (detected in destructor)
@@ -45,8 +46,9 @@ public:
 	/// @param job_name Job identifier (SHA-256 of query).
 	/// @param query Original SQL query text.
 	/// @param outputs JSON array of output datasets.
+	/// @param row_count_column Result column holding the number of rows written (invalid: count the result rows).
 	PhysicalLineageSentinel(PhysicalPlan &physical_plan, vector<LogicalType> types, idx_t estimated_cardinality,
-	                        string run_id, string job_name, string query, json outputs);
+	                        string run_id, string job_name, string query, json outputs, optional_idx row_count_column);
 
 	/// @brief Destructor that emits COMPLETE or FAIL event.
 	/// @note Detects exceptions via std::uncaught_exception() to determine event type.
@@ -58,10 +60,13 @@ public:
 	string job_name; ///< Job identifier (hash of query)
 	string query;    ///< Original SQL query text
 	json outputs;    ///< JSON array of output datasets
+	/// Result column holding the number of rows written. DML statements without RETURNING return the count instead
+	/// of the rows, so counting their result rows would always report 1. Invalid: count the result rows.
+	optional_idx row_count_column;
 
 	// ===== Operator Interface =====
 
-	/// @brief Execute the operator by passing through data and counting rows.
+	/// @brief Execute the operator by passing through data and counting the rows written.
 	/// @param context Execution context.
 	/// @param input Input data chunk from child operator.
 	/// @param chunk Output data chunk (referenced to input).

@@ -23,8 +23,8 @@ PhysicalOperator &LogicalLineageSentinel::CreatePlan(ClientContext &context, Phy
 
 	// Step 2: Create our PhysicalLineageSentinel operator
 	// The planner's Make method uses the planner's allocator for memory management
-	auto &physical_sentinel =
-	    planner.Make<PhysicalLineageSentinel>(types, estimated_cardinality, run_id, job_name, query, outputs);
+	auto &physical_sentinel = planner.Make<PhysicalLineageSentinel>(types, estimated_cardinality, run_id, job_name,
+	                                                                query, outputs, row_count_column);
 
 	// Step 3: Attach the child's physical plan as our child
 	// This maintains the operator tree structure in the physical plan

@@ -99,6 +99,8 @@ def test_output_statistics_row_count(lineage_connection, marquez_client, clean_m
             stats = output_facets.get("outputStatistics")
             if stats:
                 assert_output_has_statistics(output)
+                # The rows written, not the single count row the INSERT returns
+                assert stats["rowCount"] == 3
                 return
 
     pytest.fail("No outputStatistics.rowCount found on INSERT COMPLETE event")
