@@ -1416,8 +1416,9 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 			// Try all catalog/schema combinations
 			bool found = false;
 			for (const auto &catalog_name : catalog_names) {
-				if (found)
+				if (found) {
 					break;
+				}
 
 				// Build schema list for this specific catalog
 				vector<string> schemas_for_this_catalog;
@@ -1692,8 +1693,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 		bool found_view_def = false;
 		for (const auto &catalog_name : catalog_names) {
-			if (found_view_def)
+			if (found_view_def) {
 				break;
+			}
 
 			// Build schema list for this specific catalog
 			vector<string> schemas_for_this_catalog;
@@ -1812,8 +1814,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 		// Try all combinations
 		for (const auto &catalog_name : catalog_names) {
-			if (found_view)
+			if (found_view) {
 				break;
+			}
 
 			// Build schema list for this specific catalog
 			vector<string> schemas_for_this_catalog;

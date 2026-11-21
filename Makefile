@@ -7,25 +7,27 @@ EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 
-# tidy-check-local: a working alternative to the upstream `tidy-check` target.
-# The upstream target in extension-ci-tools/.../duckdb_extension.Makefile:271
-# omits $(VCPKG_MANIFEST_FLAGS), so cmake configure fails to find vcpkg deps
-# (CURL, nlohmann-json) when they aren't installed system-wide. This target
-# reuses the same flags but adds the manifest dir, then runs run-clang-tidy.
+# tidy-check-src: a working replacement for the upstream `tidy-check` target (CI runs this one instead).
+# The upstream target in extension-ci-tools/makefiles/duckdb_extension.Makefile:
+#   - only checks files matching '$(PROJ_DIR)src/.*/', i.e. files in a subdirectory of src/. All of our sources
+#     sit directly in src/, so it checks nothing and always passes.
+#   - omits $(VCPKG_MANIFEST_FLAGS), so cmake configure fails to find the vcpkg deps (CURL, nlohmann-json)
+#     when they aren't installed system-wide.
+# This target checks every source file in src/ and the headers in src/include/.
 #
 # Requires:
-#   - VCPKG_TOOLCHAIN_PATH pointing at a vcpkg.cmake (e.g. /tmp/vcpkg/scripts/buildsystems/vcpkg.cmake)
+#   - the dependencies installed system-wide (as in CI), or VCPKG_TOOLCHAIN_PATH pointing at a vcpkg.cmake
+#     (e.g. /tmp/vcpkg/scripts/buildsystems/vcpkg.cmake)
 #   - clang-tidy on PATH (uv sync --extra tidy installs it)
-.PHONY: tidy-check-local
-tidy-check-local:
-	@if [ -z "$(VCPKG_TOOLCHAIN_PATH)" ]; then \
-		echo "VCPKG_TOOLCHAIN_PATH must be set (e.g. export VCPKG_TOOLCHAIN_PATH=/tmp/vcpkg/scripts/buildsystems/vcpkg.cmake)"; \
-		exit 1; \
-	fi
+.PHONY: tidy-check-src tidy-check-local
+tidy-check-src:
 	mkdir -p ./build/tidy
 	cmake $(GENERATOR) $(BUILD_FLAGS) $(EXT_DEBUG_FLAGS) $(VCPKG_MANIFEST_FLAGS) -DDISABLE_UNITY=1 -DCLANG_TIDY=1 -S $(DUCKDB_SRCDIR) -B build/tidy
 	cp duckdb/.clang-tidy build/tidy/.clang-tidy
-	cd build/tidy && python3 ../../duckdb/scripts/run-clang-tidy.py '$(PROJ_DIR)src/.*/' -header-filter '$(PROJ_DIR)src/.*/' -quiet $(TIDY_THREAD_PARAMETER) $(TIDY_BINARY_PARAMETER) $(TIDY_PERFORM_CHECKS)
+	cd build/tidy && python3 ../../duckdb/scripts/run-clang-tidy.py '$(PROJ_DIR)src/[^/]*\.cpp$$' -header-filter '$(PROJ_DIR)src/.*' -quiet $(TIDY_THREAD_PARAMETER) $(TIDY_BINARY_PARAMETER) $(TIDY_PERFORM_CHECKS)
+
+# Previous name of tidy-check-src
+tidy-check-local: tidy-check-src
 
 # Override distribution workflow's test target to run our pytest suite
 # Runs integration tests (excludes ducklake_postgres which needs extra infra)
