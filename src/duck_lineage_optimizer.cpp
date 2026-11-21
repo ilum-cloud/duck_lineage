@@ -29,7 +29,8 @@
 #include "duckdb/parser/query_node.hpp"
 #include "duckdb/parser/query_node/select_node.hpp"
 #include "duckdb/parser/query_node/set_operation_node.hpp"
-#include "duckdb/planner/operator/logical_simple.hpp"
+#include "duckdb/planner/operator/logical_alter.hpp"
+#include "duckdb/planner/operator/logical_drop.hpp"
 #include "duckdb/parser/parsed_data/alter_info.hpp"
 #include "duckdb/parser/parsed_data/alter_table_info.hpp"
 #include "duckdb/parser/parsed_data/drop_info.hpp"
@@ -55,6 +56,34 @@
 namespace duckdb {
 
 using json = nlohmann::json;
+
+//===--------------------------------------------------------------------===//
+// Name helpers
+//===--------------------------------------------------------------------===//
+// Since DuckDB 2.0, catalog object names are Identifiers, which only convert to strings explicitly.
+
+static const string &RefCatalogName(const BaseTableRef &ref) {
+	return ref.GetQualifiedName().Catalog().GetIdentifierName();
+}
+
+static const string &RefSchemaName(const BaseTableRef &ref) {
+	return ref.GetQualifiedName().Schema().GetIdentifierName();
+}
+
+static const string &RefTableName(const BaseTableRef &ref) {
+	return ref.Table().GetIdentifierName();
+}
+
+/// @brief Look up a catalog entry by catalog and schema name plus the entry name in lookup_info.
+/// @note Does what the Catalog::GetEntry(context, catalog, schema, lookup_info, ...) overload did before DuckDB 2.0
+///       deprecated it in favor of folding catalog and schema into the EntryLookupInfo.
+static optional_ptr<CatalogEntry> LookupEntry(ClientContext &context, const string &catalog, const string &schema,
+                                              const EntryLookupInfo &lookup_info, OnEntryNotFound if_not_found) {
+	return Catalog::GetEntry(context,
+	                         EntryLookupInfo(lookup_info, QualifiedName(Identifier(catalog), Identifier(schema),
+	                                                                    lookup_info.GetEntryIdentifier())),
+	                         if_not_found);
+}
 
 //===--------------------------------------------------------------------===//
 // Helper Structures for Deduplication
@@ -216,8 +245,8 @@ static void ExtractTableNamesFromTableRef(ClientContext &context, TableRef &ref,
 		try {
 			// Try to look up the table entry to determine its actual catalog and schema
 			optional_ptr<CatalogEntry> entry = nullptr;
-			string actual_catalog_name = base_table.catalog_name;
-			string actual_schema_name = base_table.schema_name;
+			string actual_catalog_name = RefCatalogName(base_table);
+			string actual_schema_name = RefSchemaName(base_table);
 
 			// If catalog is not specified, try to find the table in available catalogs
 			if (actual_catalog_name.empty()) {
@@ -228,9 +257,10 @@ static void ExtractTableNamesFromTableRef(ClientContext &context, TableRef &ref,
 						vector<string> schemas_to_try = {"main", "default", ""};
 						for (const auto &schema_name : schemas_to_try) {
 							try {
-								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY, base_table.table_name);
-								auto test_entry = Catalog::GetEntry(context, catalog_name, schema_name, lookup_info,
-								                                    OnEntryNotFound::RETURN_NULL);
+								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY,
+								                            QualifiedName(Identifier(RefTableName(base_table))));
+								auto test_entry = LookupEntry(context, catalog_name, schema_name, lookup_info,
+								                              OnEntryNotFound::RETURN_NULL);
 								if (test_entry && (test_entry->type == CatalogType::TABLE_ENTRY ||
 								                   test_entry->type == CatalogType::VIEW_ENTRY)) {
 									entry = test_entry;
@@ -252,20 +282,21 @@ static void ExtractTableNamesFromTableRef(ClientContext &context, TableRef &ref,
 
 			// Build fully qualified table name
 			if (!actual_catalog_name.empty()) {
-				string fully_qualified = actual_catalog_name + "." + actual_schema_name + "." + base_table.table_name;
+				string fully_qualified =
+				    actual_catalog_name + "." + actual_schema_name + "." + RefTableName(base_table);
 				table_names.insert(fully_qualified);
 			} else {
 				// Fallback: use the catalog/schema from the BaseTableRef
-				string catalog_name = base_table.catalog_name.empty() ? "memory" : base_table.catalog_name;
-				string schema_name = base_table.schema_name.empty() ? "main" : base_table.schema_name;
-				string fully_qualified = catalog_name + "." + schema_name + "." + base_table.table_name;
+				string catalog_name = RefCatalogName(base_table).empty() ? "memory" : RefCatalogName(base_table);
+				string schema_name = RefSchemaName(base_table).empty() ? "main" : RefSchemaName(base_table);
+				string fully_qualified = catalog_name + "." + schema_name + "." + RefTableName(base_table);
 				table_names.insert(fully_qualified);
 			}
 		} catch (...) {
 			// Fallback: use the catalog/schema from the BaseTableRef
-			string catalog_name = base_table.catalog_name.empty() ? "memory" : base_table.catalog_name;
-			string schema_name = base_table.schema_name.empty() ? "main" : base_table.schema_name;
-			string fully_qualified = catalog_name + "." + schema_name + "." + base_table.table_name;
+			string catalog_name = RefCatalogName(base_table).empty() ? "memory" : RefCatalogName(base_table);
+			string schema_name = RefSchemaName(base_table).empty() ? "main" : RefSchemaName(base_table);
+			string fully_qualified = catalog_name + "." + schema_name + "." + RefTableName(base_table);
 			table_names.insert(fully_qualified);
 		}
 		break;
@@ -332,14 +363,14 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 		// Get the actual catalog from the context if not specified
 		// BaseTableRef is from the parsed query, so catalog_name may be empty
 		// Use pointer to allow reassignment when searching for HMS catalog
-		Catalog *catalog_ptr = &Catalog::GetCatalog(context, base_table.catalog_name);
-		string catalog_name = catalog_ptr->GetName();
+		Catalog *catalog_ptr = &Catalog::GetCatalog(context, Identifier(RefCatalogName(base_table)));
+		string catalog_name = catalog_ptr->GetName().GetIdentifierName();
 		string catalog_type = catalog_ptr->GetCatalogType();
-		string schema_name = base_table.schema_name.empty() ? "main" : base_table.schema_name;
+		string schema_name = RefSchemaName(base_table).empty() ? "main" : RefSchemaName(base_table);
 		string db_path = GetCatalogPath(*catalog_ptr);
 
 		// Build the fully qualified table name
-		string fully_qualified_name = catalog_name + "." + schema_name + "." + base_table.table_name;
+		string fully_qualified_name = catalog_name + "." + schema_name + "." + RefTableName(base_table);
 
 		// Check if this is an HMS table by catalog type
 		bool is_hms_table = (catalog_type == "hive_metastore");
@@ -368,7 +399,7 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 				vector<string> hms_catalog_names = {"hms", "hive", "hive_metastore"};
 				for (const auto &hms_name : hms_catalog_names) {
 					try {
-						auto &test_catalog = Catalog::GetCatalog(context, hms_name);
+						auto &test_catalog = Catalog::GetCatalog(context, Identifier(hms_name));
 						string test_cat_type = test_catalog.GetCatalogType();
 
 						if (test_cat_type == "hive_metastore") {
@@ -379,16 +410,18 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 
 							// Approach 1: Try with the original schema name from the query
 							{
-								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY, base_table.table_name);
-								test_entry = Catalog::GetEntry(context, hms_name, schema_name, lookup_info,
-								                               OnEntryNotFound::RETURN_NULL);
+								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY,
+								                            QualifiedName(Identifier(RefTableName(base_table))));
+								test_entry = LookupEntry(context, hms_name, schema_name, lookup_info,
+								                         OnEntryNotFound::RETURN_NULL);
 							}
 
 							// Approach 2: Try with 'default' schema (common in HMS)
 							if (!test_entry && schema_name != "default") {
-								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY, base_table.table_name);
-								test_entry = Catalog::GetEntry(context, hms_name, "default", lookup_info,
-								                               OnEntryNotFound::RETURN_NULL);
+								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY,
+								                            QualifiedName(Identifier(RefTableName(base_table))));
+								test_entry = LookupEntry(context, hms_name, "default", lookup_info,
+								                         OnEntryNotFound::RETURN_NULL);
 								if (test_entry) {
 									found_schema = "default";
 								}
@@ -396,9 +429,10 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 
 							// Approach 3: Try with empty schema (let HMS decide)
 							if (!test_entry) {
-								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY, base_table.table_name);
+								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY,
+								                            QualifiedName(Identifier(RefTableName(base_table))));
 								test_entry =
-								    Catalog::GetEntry(context, hms_name, "", lookup_info, OnEntryNotFound::RETURN_NULL);
+								    LookupEntry(context, hms_name, "", lookup_info, OnEntryNotFound::RETURN_NULL);
 								if (test_entry) {
 									found_schema = "";
 								}
@@ -414,7 +448,8 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 								catalog_type = "hive_metastore";
 								// Update schema_name to the one that actually worked
 								schema_name = found_schema.empty() ? "hms" : found_schema;
-								fully_qualified_name = catalog_name + "." + schema_name + "." + base_table.table_name;
+								fully_qualified_name =
+								    catalog_name + "." + schema_name + "." + RefTableName(base_table);
 								db_path = GetCatalogPath(*catalog_ptr);
 								// Save the entry for later use
 								found_hms_entry = test_entry;
@@ -450,7 +485,8 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 			if (table_entry && table_entry->type == CatalogType::TABLE_ENTRY) {
 				auto &table = table_entry->Cast<TableCatalogEntry>();
 				for (auto &col : table.GetColumns().Logical()) {
-					fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+					fields.push_back(
+					    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 				}
 			}
 
@@ -504,8 +540,8 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 					if (!segments.empty() && segments.size() > 2) {
 						// Check if last segment contains or matches the table name
 						string last_segment = segments.back();
-						if (last_segment == base_table.table_name ||
-						    StringUtil::Contains(last_segment, base_table.table_name)) {
+						if (last_segment == RefTableName(base_table) ||
+						    StringUtil::Contains(last_segment, RefTableName(base_table))) {
 							stripped_segments.insert(stripped_segments.begin(), last_segment);
 							segments.pop_back();
 						}
@@ -543,12 +579,12 @@ static void ExtractInputsFromTableRef(ClientContext &context, TableRef &ref, Lin
 				} else {
 					// Fallback for unexpected path format
 					hms_dataset_namespace = normalized_location;
-					hms_dataset_name = base_table.table_name;
+					hms_dataset_name = RefTableName(base_table);
 				}
 			} else {
 				// Fallback: use catalog name as namespace
-				hms_dataset_namespace = catalog_name;     // e.g., "hms"
-				hms_dataset_name = base_table.table_name; // e.g., "transactions"
+				hms_dataset_namespace = catalog_name;        // e.g., "hms"
+				hms_dataset_name = RefTableName(base_table); // e.g., "transactions"
 			}
 
 			// Update catalog_info source to match the namespace
@@ -691,7 +727,8 @@ public:
 					// Extract schema information from the view
 					json fields = json::array();
 					for (auto &col : get.GetTable()->GetColumns().Logical()) {
-						fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+						fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(),
+						                                                        col.Type().ToString()));
 					}
 
 					// Add the view as an input dataset
@@ -732,7 +769,8 @@ public:
 				// Extract schema information (column names and types)
 				json fields = json::array();
 				for (auto &col : get.GetTable()->GetColumns().Logical()) {
-					fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+					fields.push_back(
+					    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 				}
 
 				// Add input dataset with both DataSource and Catalog facets
@@ -742,10 +780,10 @@ public:
 				builder.AddInputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
 			} else {
 				// Check for HMS scan function - use tags from catalog instead of parsing function name
-				if (StringUtil::StartsWith(get.function.name, "hms_scan##")) {
+				if (StringUtil::StartsWith(get.function.GetName().GetIdentifierName(), "hms_scan##")) {
 					// Parse the function name to extract catalog, schema, and table name
 					// Function name format: hms_scan##URL_ENCODED(catalog.schema.table)
-					string encoded_name = get.function.name.substr(10); // Remove "hms_scan##"
+					string encoded_name = get.function.GetName().GetIdentifierName().substr(10); // Remove "hms_scan##"
 
 					// URL decode to get fully qualified table name
 					string fully_qualified_name = StringUtil::URLDecode(encoded_name);
@@ -794,9 +832,10 @@ public:
 
 						for (const auto &test_schema : schemas_to_try) {
 							try {
-								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY, table_name);
-								auto test_entry = Catalog::GetEntry(context, catalog_name, test_schema, lookup_info,
-								                                    OnEntryNotFound::RETURN_NULL);
+								EntryLookupInfo lookup_info(CatalogType::TABLE_ENTRY,
+								                            QualifiedName(Identifier(table_name)));
+								auto test_entry = LookupEntry(context, catalog_name, test_schema, lookup_info,
+								                              OnEntryNotFound::RETURN_NULL);
 								if (test_entry && test_entry->type == CatalogType::TABLE_ENTRY) {
 									table_entry = test_entry;
 									break;
@@ -821,8 +860,8 @@ public:
 					json fields = json::array();
 					for (size_t i = 0; i < get.names.size(); i++) {
 						if (i < get.returned_types.size()) {
-							fields.push_back(
-							    LineageEventBuilder::CreateSchemaField(get.names[i], get.returned_types[i].ToString()));
+							fields.push_back(LineageEventBuilder::CreateSchemaField(get.names[i].GetIdentifierName(),
+							                                                        get.returned_types[i].ToString()));
 						}
 					}
 
@@ -928,7 +967,7 @@ public:
 							for (size_t i = 0; i < get.names.size(); i++) {
 								if (i < get.returned_types.size()) {
 									fields.push_back(LineageEventBuilder::CreateSchemaField(
-									    get.names[i], get.returned_types[i].ToString()));
+									    get.names[i].GetIdentifierName(), get.returned_types[i].ToString()));
 								}
 							}
 
@@ -971,7 +1010,8 @@ public:
 			// Extract schema information
 			json fields = json::array();
 			for (auto &col : insert.table.GetColumns().Logical()) {
-				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+				fields.push_back(
+				    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
@@ -990,7 +1030,7 @@ public:
 
 			// Get fully qualified table name early for filtering
 			string fully_qualified_name =
-			    GetFullyQualifiedTableName(create.schema.catalog, create.schema, create.info->Base().table);
+			    GetFullyQualifiedTableName(create.schema.catalog, create.schema, create.info->Base().GetTableName());
 
 			if (IsExcludedDataset(fully_qualified_name)) {
 				return;
@@ -1008,7 +1048,8 @@ public:
 			// Extract schema information from the CREATE TABLE definition
 			json fields = json::array();
 			for (auto &col : create.info->Base().columns.Logical()) {
-				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+				fields.push_back(
+				    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
@@ -1029,7 +1070,7 @@ public:
 
 				// Get fully qualified view name early for filtering
 				string fully_qualified_name =
-				    GetFullyQualifiedTableName(create.schema->catalog, *create.schema, view_info.view_name);
+				    GetFullyQualifiedTableName(create.schema->catalog, *create.schema, view_info.GetViewName());
 
 				if (IsExcludedDataset(fully_qualified_name)) {
 					return;
@@ -1046,7 +1087,7 @@ public:
 				// The view's schema is defined by the names and types in CreateViewInfo
 				json fields = json::array();
 				for (size_t i = 0; i < view_info.names.size(); i++) {
-					string col_name = view_info.names[i];
+					string col_name = view_info.names[i].GetIdentifierName();
 					string col_type = (i < view_info.types.size()) ? view_info.types[i].ToString() : "UNKNOWN";
 					fields.push_back(LineageEventBuilder::CreateSchemaField(col_name, col_type));
 				}
@@ -1070,18 +1111,21 @@ public:
 
 			// ===== Handle table/view drop (DROP TABLE / DROP VIEW) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_DROP) {
-			auto &simple = op.Cast<LogicalSimple>();
-			if (simple.info && simple.info->info_type == ParseInfoType::DROP_INFO) {
-				auto &drop_info = simple.info->Cast<DropInfo>();
+			auto &drop = op.Cast<LogicalDrop>();
+			if (drop.info) {
+				auto &drop_info = *drop.info;
 
 				// Handle table and view drops
 				if (drop_info.type == CatalogType::TABLE_ENTRY || drop_info.type == CatalogType::VIEW_ENTRY) {
 					// Build fully qualified table/view name early for filtering
 					string fully_qualified_name;
-					if (!drop_info.catalog.empty()) {
-						fully_qualified_name = drop_info.catalog + "." + drop_info.schema + "." + drop_info.name;
+					if (!drop_info.GetQualifiedName().Catalog().GetIdentifierName().empty()) {
+						fully_qualified_name = drop_info.GetQualifiedName().Catalog().GetIdentifierName() + "." +
+						                       drop_info.GetQualifiedName().Schema().GetIdentifierName() + "." +
+						                       drop_info.GetQualifiedName().Name().GetIdentifierName();
 					} else {
-						fully_qualified_name = drop_info.schema + "." + drop_info.name;
+						fully_qualified_name = drop_info.GetQualifiedName().Schema().GetIdentifierName() + "." +
+						                       drop_info.GetQualifiedName().Name().GetIdentifierName();
 					}
 
 					if (IsExcludedDataset(fully_qualified_name)) {
@@ -1089,7 +1133,7 @@ public:
 					}
 
 					// Get catalog and schema from drop info
-					auto &catalog = Catalog::GetCatalog(context, drop_info.catalog);
+					auto &catalog = Catalog::GetCatalog(context, drop_info.GetQualifiedName().Catalog());
 					string dataset_ns = ResolveDatasetNamespace(catalog);
 					string catalog_path = ResolveCatalogDataPath(catalog);
 					CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
@@ -1114,19 +1158,22 @@ public:
 
 			// ===== Handle table/view alterations (ALTER TABLE / ALTER VIEW) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_ALTER) {
-			auto &simple = op.Cast<LogicalSimple>();
-			if (simple.info && simple.info->info_type == ParseInfoType::ALTER_INFO) {
-				auto &alter_info = simple.info->Cast<AlterInfo>();
+			auto &alter = op.Cast<LogicalAlter>();
+			if (alter.info) {
+				auto &alter_info = *alter.info;
 
 				// Handle table and view alterations
 				if (alter_info.GetCatalogType() == CatalogType::TABLE_ENTRY ||
 				    alter_info.GetCatalogType() == CatalogType::VIEW_ENTRY) {
 					// Build fully qualified table/view name early for filtering
 					string fully_qualified_name;
-					if (!alter_info.catalog.empty()) {
-						fully_qualified_name = alter_info.catalog + "." + alter_info.schema + "." + alter_info.name;
+					if (!alter_info.GetQualifiedName().Catalog().GetIdentifierName().empty()) {
+						fully_qualified_name = alter_info.GetQualifiedName().Catalog().GetIdentifierName() + "." +
+						                       alter_info.GetQualifiedName().Schema().GetIdentifierName() + "." +
+						                       alter_info.GetQualifiedName().Name().GetIdentifierName();
 					} else {
-						fully_qualified_name = alter_info.schema + "." + alter_info.name;
+						fully_qualified_name = alter_info.GetQualifiedName().Schema().GetIdentifierName() + "." +
+						                       alter_info.GetQualifiedName().Name().GetIdentifierName();
 					}
 
 					if (IsExcludedDataset(fully_qualified_name)) {
@@ -1134,7 +1181,7 @@ public:
 					}
 
 					// Get catalog and schema from alter info
-					auto &catalog = Catalog::GetCatalog(context, alter_info.catalog);
+					auto &catalog = Catalog::GetCatalog(context, alter_info.GetQualifiedName().Catalog());
 					string dataset_ns = ResolveDatasetNamespace(catalog);
 					string catalog_path = ResolveCatalogDataPath(catalog);
 					CatalogInfo catalog_info_obj = ExtractCatalogInfo(catalog);
@@ -1155,11 +1202,14 @@ public:
 
 							// Build the new fully qualified name
 							string new_fully_qualified_name;
-							if (!alter_info.catalog.empty()) {
-								new_fully_qualified_name =
-								    alter_info.catalog + "." + alter_info.schema + "." + rename_info.new_table_name;
+							if (!alter_info.GetQualifiedName().Catalog().GetIdentifierName().empty()) {
+								new_fully_qualified_name = alter_info.GetQualifiedName().Catalog().GetIdentifierName() +
+								                           "." +
+								                           alter_info.GetQualifiedName().Schema().GetIdentifierName() +
+								                           "." + rename_info.new_table_name.GetIdentifierName();
 							} else {
-								new_fully_qualified_name = alter_info.schema + "." + rename_info.new_table_name;
+								new_fully_qualified_name = alter_info.GetQualifiedName().Schema().GetIdentifierName() +
+								                           "." + rename_info.new_table_name.GetIdentifierName();
 							}
 
 							// Add output dataset with the new name
@@ -1221,7 +1271,8 @@ public:
 			// Extract schema information
 			json fields = json::array();
 			for (auto &col : update.table.GetColumns().Logical()) {
-				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+				fields.push_back(
+				    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
@@ -1255,7 +1306,8 @@ public:
 			// Extract schema information
 			json fields = json::array();
 			for (auto &col : del.table.GetColumns().Logical()) {
-				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+				fields.push_back(
+				    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
@@ -1290,7 +1342,8 @@ public:
 			// Extract schema information
 			json fields = json::array();
 			for (auto &col : merge.table.GetColumns().Logical()) {
-				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+				fields.push_back(
+				    LineageEventBuilder::CreateSchemaField(col.Name().GetIdentifierName(), col.Type().ToString()));
 			}
 
 			// Add output dataset with both DataSource and Catalog facets
@@ -1311,8 +1364,8 @@ public:
 			if (!copy_to.names.empty() && !copy_to.expected_types.empty() &&
 			    copy_to.names.size() == copy_to.expected_types.size()) {
 				for (size_t i = 0; i < copy_to.names.size(); i++) {
-					fields.push_back(
-					    LineageEventBuilder::CreateSchemaField(copy_to.names[i], copy_to.expected_types[i].ToString()));
+					fields.push_back(LineageEventBuilder::CreateSchemaField(copy_to.names[i].GetIdentifierName(),
+					                                                        copy_to.expected_types[i].ToString()));
 				}
 			} else if (!op.children.empty()) {
 				// Fallback: infer schema from child output types when explicit names/types are unavailable
@@ -1361,9 +1414,9 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 		try {
 			// Build list of catalogs to try
 			vector<string> catalog_names;
-			if (!base_table.catalog_name.empty()) {
+			if (!RefCatalogName(base_table).empty()) {
 				// Catalog specified, use it
-				catalog_names.push_back(base_table.catalog_name);
+				catalog_names.push_back(RefCatalogName(base_table));
 			} else {
 				// Catalog not specified - first try empty (let DuckDB decide)
 				catalog_names.push_back("");
@@ -1378,7 +1431,7 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 					vector<string> common_catalogs = {"memory", "temp"};
 					for (const auto &common_cat : common_catalogs) {
 						try {
-							Catalog::GetCatalog(context, common_cat);
+							Catalog::GetCatalog(context, Identifier(common_cat));
 							catalog_names.push_back(common_cat);
 						} catch (...) {
 							// Catalog doesn't exist, skip
@@ -1390,7 +1443,7 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 					vector<string> extension_catalogs = {"hms", "hive", "hive_metastore"};
 					for (const auto &ext_cat : extension_catalogs) {
 						try {
-							Catalog::GetCatalog(context, ext_cat);
+							Catalog::GetCatalog(context, Identifier(ext_cat));
 							catalog_names.push_back(ext_cat);
 						} catch (...) {
 							// Catalog doesn't exist, skip
@@ -1404,9 +1457,9 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 
 			// Build list of schemas to try
 			vector<string> schemas_to_try;
-			if (!base_table.schema_name.empty()) {
+			if (!RefSchemaName(base_table).empty()) {
 				// Schema specified, try it first, then empty
-				schemas_to_try.push_back(base_table.schema_name);
+				schemas_to_try.push_back(RefSchemaName(base_table));
 				schemas_to_try.push_back("");
 			} else {
 				// Schema not specified - start with empty (let DuckDB use its search path)
@@ -1422,9 +1475,9 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 
 				// Build schema list for this specific catalog
 				vector<string> schemas_for_this_catalog;
-				if (!base_table.schema_name.empty()) {
+				if (!RefSchemaName(base_table).empty()) {
 					// Schema specified, try it first, then empty
-					schemas_for_this_catalog.push_back(base_table.schema_name);
+					schemas_for_this_catalog.push_back(RefSchemaName(base_table));
 					schemas_for_this_catalog.push_back("");
 				} else {
 					// Schema not specified - start with empty (let DuckDB use its search path)
@@ -1433,13 +1486,13 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 					// Try to discover schemas from this catalog
 					if (!catalog_name.empty()) {
 						try {
-							auto &catalog = Catalog::GetCatalog(context, catalog_name);
+							auto &catalog = Catalog::GetCatalog(context, Identifier(catalog_name));
 
 							// Try to access common schema names to see which exist
 							vector<string> common_schemas = {"main", "default", "temp", "information_schema"};
 							for (const auto &schema : common_schemas) {
 								try {
-									catalog.GetSchema(context, schema);
+									catalog.GetSchema(context, Identifier(schema));
 									// Only add if not already in list
 									if (std::find(schemas_for_this_catalog.begin(), schemas_for_this_catalog.end(),
 									              schema) == schemas_for_this_catalog.end()) {
@@ -1457,13 +1510,14 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 
 				for (const auto &schema_name : schemas_for_this_catalog) {
 					try {
-						EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, base_table.table_name);
-						auto entry = Catalog::GetEntry(context, catalog_name, schema_name, lookup_info,
-						                               OnEntryNotFound::RETURN_NULL);
+						EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY,
+						                            QualifiedName(Identifier(RefTableName(base_table))));
+						auto entry =
+						    LookupEntry(context, catalog_name, schema_name, lookup_info, OnEntryNotFound::RETURN_NULL);
 
 						if (entry && entry->type == CatalogType::VIEW_ENTRY) {
 							// This is a view reference!
-							referenced_views.insert(base_table.table_name);
+							referenced_views.insert(RefTableName(base_table));
 							found = true;
 							return; // Found it, no need to check other schemas/catalogs
 						}
@@ -1517,10 +1571,10 @@ static void FindViewReferences(ClientContext &context, QueryNode &node, unordere
 			// Traverse the expression tree to find subqueries
 			try {
 				// Try to cast to subquery expression
-				if (expr->type == ExpressionType::SUBQUERY) {
+				if (expr->GetExpressionType() == ExpressionType::SUBQUERY) {
 					auto &subquery_expr = expr->Cast<SubqueryExpression>();
-					if (subquery_expr.subquery && subquery_expr.subquery->node) {
-						FindViewReferences(context, *subquery_expr.subquery->node, referenced_views);
+					if (subquery_expr.Subquery() && subquery_expr.Subquery()->node) {
+						FindViewReferences(context, *subquery_expr.Subquery()->node, referenced_views);
 					}
 				}
 			} catch (...) {
@@ -1629,7 +1683,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// NOTE: This only works when the original query string is available (not PreparedStatements).
 	unordered_set<string> referenced_views;
 	if (has_original_query) {
-		Parser parser;
+		Parser parser(input.context);
 		try {
 			parser.ParseQuery(query);
 		} catch (...) {
@@ -1669,7 +1723,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			vector<string> common_catalogs = {"memory", "temp"};
 			for (const auto &common_cat : common_catalogs) {
 				try {
-					Catalog::GetCatalog(input.context, common_cat);
+					Catalog::GetCatalog(input.context, Identifier(common_cat));
 					catalog_names.push_back(common_cat);
 				} catch (...) {
 					// Catalog doesn't exist
@@ -1680,7 +1734,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			vector<string> extension_catalogs = {"hms", "hive", "hive_metastore"};
 			for (const auto &ext_cat : extension_catalogs) {
 				try {
-					Catalog::GetCatalog(input.context, ext_cat);
+					Catalog::GetCatalog(input.context, Identifier(ext_cat));
 					catalog_names.push_back(ext_cat);
 				} catch (...) {
 					// Catalog doesn't exist
@@ -1705,12 +1759,12 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			// Try to discover schemas from this catalog
 			if (!catalog_name.empty()) {
 				try {
-					auto &catalog = Catalog::GetCatalog(input.context, catalog_name);
+					auto &catalog = Catalog::GetCatalog(input.context, Identifier(catalog_name));
 
 					vector<string> common_schemas = {"main", "default", "temp", "information_schema"};
 					for (const auto &schema : common_schemas) {
 						try {
-							catalog.GetSchema(input.context, schema);
+							catalog.GetSchema(input.context, Identifier(schema));
 							schemas_for_this_catalog.push_back(schema);
 						} catch (...) {
 							// Schema doesn't exist
@@ -1723,9 +1777,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 			for (const auto &schema_name : schemas_for_this_catalog) {
 				try {
-					EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, view_name);
-					auto entry = Catalog::GetEntry(input.context, catalog_name, schema_name, lookup_info,
-					                               OnEntryNotFound::RETURN_NULL);
+					EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, QualifiedName(Identifier(view_name)));
+					auto entry = LookupEntry(input.context, catalog_name, schema_name, lookup_info,
+					                         OnEntryNotFound::RETURN_NULL);
 
 					if (entry && entry->type == CatalogType::VIEW_ENTRY) {
 						auto &view_entry = entry->Cast<ViewCatalogEntry>();
@@ -1794,7 +1848,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			vector<string> common_catalogs = {"memory", "temp"};
 			for (const auto &common_cat : common_catalogs) {
 				try {
-					Catalog::GetCatalog(input.context, common_cat);
+					Catalog::GetCatalog(input.context, Identifier(common_cat));
 					catalog_names.push_back(common_cat);
 				} catch (...) {
 				}
@@ -1803,7 +1857,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			vector<string> extension_catalogs = {"hms", "hive", "hive_metastore"};
 			for (const auto &ext_cat : extension_catalogs) {
 				try {
-					Catalog::GetCatalog(input.context, ext_cat);
+					Catalog::GetCatalog(input.context, Identifier(ext_cat));
 					catalog_names.push_back(ext_cat);
 				} catch (...) {
 				}
@@ -1826,12 +1880,12 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 			// Try to discover schemas from this catalog
 			if (!catalog_name.empty()) {
 				try {
-					auto &catalog = Catalog::GetCatalog(input.context, catalog_name);
+					auto &catalog = Catalog::GetCatalog(input.context, Identifier(catalog_name));
 
 					vector<string> common_schemas = {"main", "default", "temp", "information_schema"};
 					for (const auto &schema : common_schemas) {
 						try {
-							catalog.GetSchema(input.context, schema);
+							catalog.GetSchema(input.context, Identifier(schema));
 							schemas_for_this_catalog.push_back(schema);
 						} catch (...) {
 							// Schema doesn't exist
@@ -1844,14 +1898,14 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 			for (const auto &schema_name : schemas_for_this_catalog) {
 				try {
-					EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, view_name);
-					auto entry = Catalog::GetEntry(input.context, catalog_name, schema_name, lookup_info,
-					                               OnEntryNotFound::RETURN_NULL);
+					EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, QualifiedName(Identifier(view_name)));
+					auto entry = LookupEntry(input.context, catalog_name, schema_name, lookup_info,
+					                         OnEntryNotFound::RETURN_NULL);
 
 					if (entry && entry->type == CatalogType::VIEW_ENTRY) {
 						// This is a view! Add it to lineage
 						auto &view_entry = entry->Cast<ViewCatalogEntry>();
-						auto &catalog = Catalog::GetCatalog(input.context, catalog_name);
+						auto &catalog = Catalog::GetCatalog(input.context, Identifier(catalog_name));
 
 						// Resolve namespace and data path (uses DATA_PATH for DuckLake)
 						string dataset_ns = ResolveDatasetNamespace(catalog);
@@ -1861,7 +1915,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
 
 						// Get fully qualified view name: catalog.schema.view
-						string resolved_catalog_name = catalog.GetName();
+						string resolved_catalog_name = catalog.GetName().GetIdentifierName();
 						string fully_qualified_name;
 						if (!schema_name.empty()) {
 							fully_qualified_name = resolved_catalog_name + "." + schema_name + "." + view_entry.name;
@@ -1875,7 +1929,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						if (column_info) {
 							for (size_t i = 0; i < column_info->names.size(); i++) {
 								fields.push_back(LineageEventBuilder::CreateSchemaField(
-								    column_info->names[i], column_info->types[i].ToString()));
+								    column_info->names[i].GetIdentifierName(), column_info->types[i].ToString()));
 							}
 						}
 
@@ -1898,8 +1952,8 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 		if (!found_view) {
 			try {
 				// Try to get the view from the entry's parent schema if available
-				EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, view_name);
-				auto entry = Catalog::GetEntry(input.context, "", "", lookup_info, OnEntryNotFound::RETURN_NULL);
+				EntryLookupInfo lookup_info(CatalogType::VIEW_ENTRY, QualifiedName(Identifier(view_name)));
+				auto entry = LookupEntry(input.context, "", "", lookup_info, OnEntryNotFound::RETURN_NULL);
 
 				if (entry && entry->type == CatalogType::VIEW_ENTRY) {
 					// This is a view! Add it to lineage
@@ -1908,11 +1962,11 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 					// Try to get the catalog from the parent schema
 					Catalog *catalog_ptr = nullptr;
 					try {
-						catalog_ptr = &Catalog::GetCatalog(input.context, "");
+						catalog_ptr = &Catalog::GetCatalog(input.context, Identifier(""));
 					} catch (...) {
 						// If that fails, try memory catalog
 						try {
-							catalog_ptr = &Catalog::GetCatalog(input.context, "memory");
+							catalog_ptr = &Catalog::GetCatalog(input.context, Identifier("memory"));
 						} catch (...) {
 						}
 					}
@@ -1928,7 +1982,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						CatalogInfo catalog_info = ExtractCatalogInfo(catalog);
 
 						// Get fully qualified view name: catalog.schema.view
-						string catalog_name = catalog.GetName();
+						string catalog_name = catalog.GetName().GetIdentifierName();
 						string fully_qualified_name = catalog_name + "." + view_entry.name;
 
 						// Extract schema information from the view
@@ -1937,7 +1991,7 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 						if (column_info) {
 							for (size_t i = 0; i < column_info->names.size(); i++) {
 								fields.push_back(LineageEventBuilder::CreateSchemaField(
-								    column_info->names[i], column_info->types[i].ToString()));
+								    column_info->names[i].GetIdentifierName(), column_info->types[i].ToString()));
 							}
 						}
 

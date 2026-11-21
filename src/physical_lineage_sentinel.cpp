@@ -34,9 +34,9 @@ PhysicalLineageSentinel::PhysicalLineageSentinel(PhysicalPlan &physical_plan, ve
 
 PhysicalLineageSentinel::~PhysicalLineageSentinel() {
 	// Determine if the query succeeded or failed
-	// std::uncaught_exception() returns true if we're in the middle of exception handling
+	// std::uncaught_exceptions() is non-zero if we're in the middle of exception handling
 	bool success = true;
-	if (std::uncaught_exception()) {
+	if (std::uncaught_exceptions() > 0) {
 		success = false;
 	}
 

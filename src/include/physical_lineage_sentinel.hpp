@@ -51,7 +51,7 @@ public:
 	                        string run_id, string job_name, string query, json outputs, optional_idx row_count_column);
 
 	/// @brief Destructor that emits COMPLETE or FAIL event.
-	/// @note Detects exceptions via std::uncaught_exception() to determine event type.
+	/// @note Detects exceptions via std::uncaught_exceptions() to determine event type.
 	/// @note Includes row count statistics in the completion event.
 	~PhysicalLineageSentinel() override;
 

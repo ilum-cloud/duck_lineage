@@ -534,3 +534,17 @@ def assert_field_has_no_sources(col_lineage_facet, output_col):
         f"Field {output_col!r} should have no sources, "
         f"got {len(input_fields)}: {[(f.get('name'), f.get('field')) for f in input_fields]}"
     )
+
+
+# ── File transport ─────────────────────────────────────────────────────
+
+
+def complete_lines(path):
+    """
+    Lines of a file the extension may still be appending to.
+
+    A reader can see a write that is still in progress, so the last line is left out unless it is complete.
+    """
+    if not path.exists():
+        return []
+    return path.read_text().split("\n")[:-1]
