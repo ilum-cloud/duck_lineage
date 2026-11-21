@@ -283,7 +283,8 @@ def test_https_self_signed_accepted_with_verify_disabled(extension_path, tls_bac
 
 _EXIT_STATEMENTS = 20
 
-_EXIT_SCRIPT = textwrap.dedent("""
+_EXIT_SCRIPT = textwrap.dedent(
+    """
     import sys
     import duckdb
 
@@ -297,7 +298,8 @@ _EXIT_SCRIPT = textwrap.dedent("""
     for i in range(statements - 1):
         conn.execute(f"CREATE TABLE exit_out_{i} AS SELECT a * {i} AS b FROM exit_src")
     # Exit right away, while the worker thread still has events queued.
-    """)
+    """
+)
 
 
 def _run_and_exit(extension_path, url, ca_cert_file):

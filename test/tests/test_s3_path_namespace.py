@@ -192,11 +192,13 @@ def test_s3_read_and_copy_to_namespace(s3_connection, marquez_client):
     )
 
     # Bug repro — matches the SQL from the issue.
-    conn.execute(f"""
+    conn.execute(
+        f"""
         COPY (
             SELECT a, b FROM read_parquet('{src_glob}')
         ) TO '{dst_path}' (FORMAT PARQUET)
-        """)
+        """
+    )
 
     # Poll until our specific read_parquet+COPY-TO START event lands.
     copy_event, events = _wait_for_copy_event(marquez_client, namespace, timeout_seconds=60)

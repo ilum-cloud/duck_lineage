@@ -24,8 +24,10 @@ build_static_extension(${TARGET_NAME} ${EXTENSION_SOURCES})
 build_loadable_extension(${TARGET_NAME} " " ${EXTENSION_SOURCES})
 
 # Link dependencies to both the static and loadable extensions
-target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json)
-target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto CURL::libcurl nlohmann_json::nlohmann_json)
+target_link_libraries(${EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto
+                      CURL::libcurl nlohmann_json::nlohmann_json)
+target_link_libraries(${LOADABLE_EXTENSION_NAME} OpenSSL::SSL OpenSSL::Crypto
+                      CURL::libcurl nlohmann_json::nlohmann_json)
 
 install(
   TARGETS ${EXTENSION_NAME}
