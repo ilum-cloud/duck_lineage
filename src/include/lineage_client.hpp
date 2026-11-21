@@ -2,9 +2,9 @@
 // DuckDB OpenLineage Extension
 //
 // File: lineage_client.hpp
-// Description: HTTP client for sending OpenLineage events to a backend server.
+// Description: Client for delivering OpenLineage events.
 //              This class manages a background worker thread that asynchronously
-//              sends lineage events via HTTP POST requests.
+//              sends lineage events via HTTP POST requests or appends them to a local file.
 //===----------------------------------------------------------------------===//
 
 #pragma once
@@ -20,12 +20,13 @@
 namespace duckdb {
 
 /// @class LineageClient
-/// @brief Singleton HTTP client for sending OpenLineage events asynchronously.
+/// @brief Singleton client for delivering OpenLineage events asynchronously.
 ///
 /// The LineageClient manages a background worker thread that processes a queue of
-/// OpenLineage events and sends them to a configured backend URL via HTTP POST.
-/// It supports configuration of the target URL, API key authentication, namespace,
-/// and debug logging.
+/// OpenLineage events and delivers them with the configured transport: "http" (default)
+/// sends them to a backend URL via HTTP POST, "file" appends them to a local file as
+/// JSON Lines. It supports configuration of the target URL, API key authentication,
+/// namespace, and debug logging.
 ///
 /// Thread Safety: All public methods are thread-safe and can be called from multiple
 /// threads simultaneously. The class uses mutexes to protect shared state.
@@ -111,6 +112,16 @@ public:
 	/// @note Thread-safe. When empty, libcurl still honors the standard proxy environment variables.
 	void SetProxy(std::string proxy);
 
+	/// @brief Set how events are delivered.
+	/// @param transport "http" (POST to duck_lineage_url) or "file" (append to duck_lineage_file_path).
+	/// @note Thread-safe. The value must already be validated and lowercased by the caller.
+	void SetTransport(std::string transport);
+
+	/// @brief Set the file the "file" transport appends events to, one JSON document per line.
+	/// @param path Absolute filesystem path. Empty disables file output.
+	/// @note Thread-safe. The file is created if it does not exist; its directory must exist.
+	void SetFilePath(std::string path);
+
 	// ===== Accessor Methods =====
 
 	/// @brief Get the current OpenLineage backend URL.
@@ -173,6 +184,14 @@ public:
 	/// @note Thread-safe.
 	std::string GetProxy() const;
 
+	/// @brief Get the configured transport ("http" or "file").
+	/// @note Thread-safe.
+	std::string GetTransport() const;
+
+	/// @brief Get the file the "file" transport writes to (may be empty).
+	/// @note Thread-safe.
+	std::string GetFilePath() const;
+
 	/// @brief Get the number of events dropped due to queue overflow.
 	/// @return Number of dropped events.
 	/// @note Thread-safe.
@@ -208,6 +227,12 @@ private:
 	/// @note Retries with exponential backoff, except while shutting down.
 	bool PostToBackend(const std::string &payload);
 
+	/// @brief Append events to the configured file, one JSON document per line.
+	/// @param events JSON payloads to write.
+	/// @return true if all events were written.
+	/// @note Not retried: a local write that failed is not going to succeed a few milliseconds later.
+	bool AppendToFile(const std::vector<std::string> &events);
+
 	// ===== Queue Management =====
 	std::mutex queue_mutex;              ///< Protects access to event_queue
 	std::condition_variable queue_cv;    ///< Notifies worker when events are available
@@ -233,6 +258,8 @@ private:
 	std::string inherited_ca_cert_file; ///< CA bundle inherited from DuckDB's global ca_cert_file setting
 	std::string proxy_url;              ///< Proxy URL for backend requests (duck_lineage_proxy)
 	bool ssl_verify = true;             ///< Verify TLS peer + host (default true)
+	std::string transport = "http";     ///< Event transport: "http" or "file" (duck_lineage_transport)
+	std::string file_path;              ///< Output file for the "file" transport (duck_lineage_file_path)
 };
 
 } // namespace duckdb

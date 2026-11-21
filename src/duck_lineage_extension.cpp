@@ -11,6 +11,9 @@
 #include "duck_lineage_extension.hpp"
 #include "duckdb.hpp"
 #include "duckdb/common/exception.hpp"
+#include "duckdb/common/file_open_flags.hpp"
+#include "duckdb/common/file_system.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/parser/parsed_data/create_pragma_function_info.hpp"
 #include "duckdb/main/database.hpp"
@@ -85,6 +88,39 @@ static void SetDuckLineageProxy(ClientContext &context, SetScope scope, Value &p
 	LineageClient::Get().SetProxy(parameter.GetValue<string>());
 }
 
+/// @brief Callback for choosing how events are delivered ("http" or "file").
+static void SetDuckLineageTransport(ClientContext &context, SetScope scope, Value &parameter) {
+	auto transport = StringUtil::Lower(parameter.GetValue<string>());
+	if (transport != "http" && transport != "file") {
+		throw InvalidInputException("Unsupported duck_lineage_transport '%s'. Expected 'http' or 'file'.",
+		                            parameter.GetValue<string>());
+	}
+	// Store the normalized value, so current_setting() shows what is actually in effect
+	parameter = Value(transport);
+	LineageClient::Get().SetTransport(std::move(transport));
+}
+
+/// @brief Callback for setting the file the "file" transport appends events to.
+/// @note The file is opened (and created if needed) right away, so a path that cannot be written fails the SET
+///       instead of every event being dropped later. This goes through the connection's file system, so DuckDB's
+///       enable_external_access and allowed_directories restrictions apply.
+static void SetDuckLineageFilePath(ClientContext &context, SetScope scope, Value &parameter) {
+	// NULL disables file output like '' does (GetValue<string>() would turn it into a file named "NULL")
+	string path = parameter.IsNull() ? string() : parameter.GetValue<string>();
+	if (!path.empty()) {
+		auto &fs = FileSystem::GetFileSystem(context);
+		path = fs.ExpandPath(path);
+		// Events are written later by a background thread: pin relative paths to the current working directory
+		if (!fs.IsPathAbsolute(path)) {
+			path = fs.JoinPath(FileSystem::GetWorkingDirectory(), path);
+		}
+		fs.OpenFile(path,
+		            FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE | FileFlags::FILE_FLAGS_APPEND)
+		    ->Close();
+	}
+	LineageClient::Get().SetFilePath(std::move(path));
+}
+
 //===--------------------------------------------------------------------===//
 // Extension Loading
 //===--------------------------------------------------------------------===//
@@ -154,6 +190,17 @@ static void LoadInternal(ExtensionLoader &loader) {
 	config.AddExtensionOption("duck_lineage_proxy",
 	                          "Proxy URL to route OpenLineage requests through (empty honors proxy env vars)",
 	                          LogicalType::VARCHAR, Value(""), SetDuckLineageProxy);
+
+	// SET duck_lineage_transport = 'file'
+	config.AddExtensionOption("duck_lineage_transport",
+	                          "How OpenLineage events are delivered: 'http' (POST to duck_lineage_url) or 'file' "
+	                          "(append to duck_lineage_file_path)",
+	                          LogicalType::VARCHAR, Value("http"), SetDuckLineageTransport);
+
+	// SET duck_lineage_file_path = '/var/log/openlineage/events.jsonl'
+	config.AddExtensionOption("duck_lineage_file_path",
+	                          "File the 'file' transport appends OpenLineage events to, one JSON document per line",
+	                          LogicalType::VARCHAR, Value(""), SetDuckLineageFilePath);
 
 	// Register the optimizer extension that injects lineage tracking
 	OptimizerExtension extension;
