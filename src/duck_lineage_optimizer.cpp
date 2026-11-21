@@ -1268,6 +1268,40 @@ public:
 			// We'll use OVERWRITE to indicate data modification
 			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
 
+			// ===== Handle MERGE INTO, and INSERT ... ON CONFLICT / INSERT OR REPLACE (planned as a merge) =====
+		} else if (op.type == LogicalOperatorType::LOGICAL_MERGE_INTO) {
+			auto &merge = op.Cast<LogicalMergeInto>();
+
+			// Get fully qualified table name early for filtering
+			string fully_qualified_name =
+			    GetFullyQualifiedTableName(merge.table.catalog, merge.table.ParentSchema(), merge.table.name);
+
+			if (IsExcludedDataset(fully_qualified_name)) {
+				return;
+			}
+
+			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+			string dataset_ns = ResolveDatasetNamespace(merge.table.catalog);
+			string catalog_path = ResolveCatalogDataPath(merge.table.catalog);
+
+			// Extract catalog information for the catalog facet
+			CatalogInfo catalog_info = ExtractCatalogInfo(merge.table.catalog);
+
+			// Extract schema information
+			json fields = json::array();
+			for (auto &col : merge.table.GetColumns().Logical()) {
+				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+			}
+
+			// Add output dataset with both DataSource and Catalog facets
+			builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path, catalog_info);
+
+			// Add DatasetType facet to distinguish this as a TABLE
+			builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
+
+			// A merge inserts, updates and/or deletes rows of the target table: OVERWRITE, like UPDATE and DELETE
+			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
+
 			// ===== Handle COPY TO FILE (export to files) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_COPY_TO_FILE) {
 			auto &copy_to = op.Cast<LogicalCopyToFile>();

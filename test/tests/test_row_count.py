@@ -7,58 +7,7 @@ come from that value rather than from the number of result rows (which used to m
 The events are captured with the file transport, so these tests do not need Marquez.
 """
 
-import json
-import time
-import uuid
-
-import duckdb
 import pytest
-
-
-@pytest.fixture(autouse=True)
-def _restore_transport_defaults(extension_path):
-    """The LineageClient is a process-wide singleton: switch back to the HTTP transport after each test."""
-    yield
-    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
-    try:
-        conn.execute(f"LOAD '{extension_path}'")
-        conn.execute("RESET duck_lineage_transport")
-        conn.execute("RESET duck_lineage_file_path")
-        conn.execute("RESET duck_lineage_namespace")
-    finally:
-        conn.close()
-
-
-@pytest.fixture
-def capture(extension_path, tmp_path):
-    """Connection writing its events to a file; yields a function returning the COMPLETE event of a statement."""
-    path = tmp_path / "events.jsonl"
-    namespace = f"row_count_{uuid.uuid4().hex[:8]}"
-    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
-    conn.execute(f"LOAD '{extension_path}'")
-    conn.execute("SET duck_lineage_transport = 'file'")
-    conn.execute(f"SET duck_lineage_file_path = '{path}'")
-    conn.execute(f"SET duck_lineage_namespace = '{namespace}'")
-
-    def complete_event(sql, timeout=10.0):
-        deadline = time.time() + timeout
-        while True:
-            for line in path.read_text().splitlines():
-                event = json.loads(line)
-                if (
-                    event["eventType"] == "COMPLETE"
-                    and event["job"]["namespace"] == namespace
-                    and event["job"].get("facets", {}).get("sql", {}).get("query") == sql
-                ):
-                    return event
-            if time.time() > deadline:
-                pytest.fail(f"No COMPLETE event for {sql!r}")
-            time.sleep(0.1)
-
-    try:
-        yield conn, complete_event, tmp_path
-    finally:
-        conn.close()
 
 
 def _row_counts(event):
@@ -118,6 +67,26 @@ _CASES = {
         "COPY rc TO '{dir}/rc_part' (FORMAT parquet, PARTITION_BY (p), RETURN_STATS true)",
         100,
     ),
+    "merge": (
+        [
+            "CREATE TABLE rc (id INT PRIMARY KEY, v INT)",
+            "INSERT INTO rc SELECT range, 0 FROM range(10)",
+            "CREATE TABLE rc_src AS SELECT range::INT AS id FROM range(5, 15)",
+        ],
+        "MERGE INTO rc USING rc_src ON rc.id = rc_src.id "
+        "WHEN MATCHED THEN UPDATE SET v = 1 WHEN NOT MATCHED THEN INSERT VALUES (rc_src.id, 2)",
+        10,
+    ),
+    "insert_or_replace": (
+        ["CREATE TABLE rc (id INT PRIMARY KEY, v INT)", "INSERT INTO rc SELECT range, 0 FROM range(10)"],
+        "INSERT OR REPLACE INTO rc SELECT range, 1 FROM range(12)",
+        12,
+    ),
+    "insert_on_conflict_do_nothing": (
+        ["CREATE TABLE rc (id INT PRIMARY KEY, v INT)", "INSERT INTO rc SELECT range, 0 FROM range(10)"],
+        "INSERT INTO rc SELECT range, 1 FROM range(15) ON CONFLICT DO NOTHING",
+        5,
+    ),
     "copy_from": (
         [
             "CREATE TABLE rc_src AS SELECT range AS id FROM range(100)",
@@ -132,23 +101,21 @@ _CASES = {
 
 @pytest.mark.integration
 @pytest.mark.parametrize("case", list(_CASES))
-def test_row_count_is_rows_written(capture, case):
-    conn, complete_event, tmp_path = capture
+def test_row_count_is_rows_written(file_lineage, case):
     setup, statement, expected = _CASES[case]
     for sql in setup:
-        conn.execute(sql.format(dir=tmp_path))
-    statement = statement.format(dir=tmp_path)
-    conn.execute(statement).fetchall()
+        file_lineage.conn.execute(sql.format(dir=file_lineage.dir))
+    statement = statement.format(dir=file_lineage.dir)
+    file_lineage.conn.execute(statement).fetchall()
 
-    row_counts = _row_counts(complete_event(statement))
+    row_counts = _row_counts(file_lineage.event(statement))
     assert row_counts, "COMPLETE event has no output datasets"
     assert row_counts == [expected] * len(row_counts)
 
 
 @pytest.mark.integration
-def test_select_has_no_output_statistics(capture):
+def test_select_has_no_output_statistics(file_lineage):
     """A plain SELECT writes nothing, so it has no outputs (and no rowCount) at all."""
-    conn, complete_event, _ = capture
-    conn.execute("CREATE TABLE rc AS SELECT range AS id FROM range(100)")
-    conn.execute("SELECT * FROM rc").fetchall()
-    assert complete_event("SELECT * FROM rc").get("outputs", []) == []
+    file_lineage.conn.execute("CREATE TABLE rc AS SELECT range AS id FROM range(100)")
+    file_lineage.conn.execute("SELECT * FROM rc").fetchall()
+    assert file_lineage.event("SELECT * FROM rc").get("outputs", []) == []
