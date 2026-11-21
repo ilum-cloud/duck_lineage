@@ -130,6 +130,8 @@ class MarquezTestClient:
             try:
                 dataset = self.client.get_dataset(namespace, name)  # type: ignore
             except Exception:
+                # Not registered yet (Marquez answers 404): poll again, keeping the last dataset seen (if any)
+                # for the caller's assertions
                 pass
             if dataset and dataset.get("fields") and dataset.get("lastLifecycleState") == state:
                 return dataset
