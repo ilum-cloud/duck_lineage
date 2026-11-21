@@ -169,4 +169,5 @@ jobs:
 
       - name: Tidy Check Diff
         shell: bash
-        run: uv run make -j16 tidy-check
+        # Not the upstream tidy-check target: it checks no files in this repository (see tidy-check-src)
+        run: uv run make -j16 tidy-check-src

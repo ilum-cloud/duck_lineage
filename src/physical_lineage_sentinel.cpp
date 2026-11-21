@@ -26,9 +26,10 @@ using json = nlohmann::json;
 
 PhysicalLineageSentinel::PhysicalLineageSentinel(PhysicalPlan &physical_plan, vector<LogicalType> types,
                                                  idx_t estimated_cardinality, string run_id, string job_name,
-                                                 string query, json outputs)
+                                                 string query, json outputs, optional_idx row_count_column)
     : PhysicalOperator(physical_plan, PhysicalOperatorType::EXTENSION, std::move(types), estimated_cardinality),
-      run_id(std::move(run_id)), job_name(std::move(job_name)), query(std::move(query)), outputs(std::move(outputs)) {
+      run_id(std::move(run_id)), job_name(std::move(job_name)), query(std::move(query)), outputs(std::move(outputs)),
+      row_count_column(row_count_column) {
 }
 
 PhysicalLineageSentinel::~PhysicalLineageSentinel() {
@@ -123,7 +124,20 @@ OperatorResultType PhysicalLineageSentinel::Execute(ExecutionContext &context, D
 
 	// Atomically increment the row counter
 	// This is thread-safe as the counter is atomic
-	sentinel_state.rows_processed += chunk.size();
+	if (row_count_column.IsValid() && row_count_column.GetIndex() < input.ColumnCount()) {
+		// The statement reports the rows it wrote in a count column (one row, or one per file for RETURN_STATS)
+		auto &count_vector = input.data[row_count_column.GetIndex()];
+		idx_t written = 0;
+		for (idx_t row = 0; row < input.size(); row++) {
+			auto count = count_vector.GetValue(row);
+			if (!count.IsNull() && count.GetValue<int64_t>() > 0) {
+				written += static_cast<idx_t>(count.GetValue<int64_t>());
+			}
+		}
+		sentinel_state.rows_processed += written;
+	} else {
+		sentinel_state.rows_processed += chunk.size();
+	}
 
 	// Request more input from the child operator
 	return OperatorResultType::NEED_MORE_INPUT;

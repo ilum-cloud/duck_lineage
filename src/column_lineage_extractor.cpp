@@ -70,6 +70,19 @@ void ColumnLineageExtractor::BuildLineageMap(LogicalOperator &op) {
 	TraversePlan(op);
 }
 
+/// @brief Check whether the plan contains a MERGE INTO operator.
+static bool ContainsMergeInto(LogicalOperator &op) {
+	if (op.type == LogicalOperatorType::LOGICAL_MERGE_INTO) {
+		return true;
+	}
+	for (auto &child : op.children) {
+		if (ContainsMergeInto(*child)) {
+			return true;
+		}
+	}
+	return false;
+}
+
 /// @brief Walk down through "sink" operators (INSERT, CREATE, COPY_TO, etc.)
 /// to find the operator that actually produces the data being written.
 static LogicalOperator *FindDataProducingOperator(LogicalOperator &op) {
@@ -217,6 +230,13 @@ vector<ColumnLineageField> ColumnLineageExtractor::ExtractOutputColumnLineage(Lo
                                                                               const string &dataset_namespace,
                                                                               const string &dataset_name) {
 	vector<ColumnLineageField> result;
+
+	// A merge (MERGE INTO, INSERT ... ON CONFLICT, INSERT OR REPLACE) is fed the target's row ids joined with the
+	// source, not rows in the target's column order, so the positional mapping below would attribute columns
+	// wrongly. Emit no column lineage rather than a wrong one.
+	if (ContainsMergeInto(op)) {
+		return result;
+	}
 
 	// Find the operator that produces the data being written
 	LogicalOperator *data_op = FindDataProducingOperator(op);

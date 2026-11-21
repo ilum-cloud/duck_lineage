@@ -73,9 +73,9 @@ static std::string CalculateSHA256(const std::string &str) {
 
 	EVP_MD_CTX_free(mdctx);
 
-	std::string result(hash_len * 2, '\0');
+	std::string result(static_cast<size_t>(hash_len) * 2, '\0');
 	for (unsigned int i = 0; i < hash_len; i++) {
-		snprintf(&result[i * 2], 3, "%02x", hash[i]);
+		snprintf(&result[static_cast<size_t>(i) * 2], 3, "%02x", hash[i]);
 	}
 	return result;
 }
@@ -151,7 +151,7 @@ static std::string GetCurrentISOTime() {
 /// @note Handles cases where schema may be "default" or omitted.
 /// @note Assumes the path is in the format: base_path/schema/table or base_path/table.
 static string extract_base_path(const string &location, const string &schema_name, const string &table_name) {
-	string path = location;
+	const string &path = location;
 	if (!(StringUtil::StartsWith(path, "s3a://") || StringUtil::StartsWith(path, "s3://"))) {
 		return location; // only handle s3-style URIs here
 	}

@@ -20,6 +20,7 @@
 #include "duckdb/planner/operator/logical_create.hpp"
 #include "duckdb/planner/operator/logical_create_table.hpp"
 #include "duckdb/planner/operator/logical_copy_to_file.hpp"
+#include "duckdb/planner/operator/logical_merge_into.hpp"
 #include "duckdb/parser/parsed_data/create_view_info.hpp"
 #include "duckdb/parser/tableref.hpp"
 #include "duckdb/parser/tableref/basetableref.hpp"
@@ -1267,6 +1268,40 @@ public:
 			// We'll use OVERWRITE to indicate data modification
 			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
 
+			// ===== Handle MERGE INTO, and INSERT ... ON CONFLICT / INSERT OR REPLACE (planned as a merge) =====
+		} else if (op.type == LogicalOperatorType::LOGICAL_MERGE_INTO) {
+			auto &merge = op.Cast<LogicalMergeInto>();
+
+			// Get fully qualified table name early for filtering
+			string fully_qualified_name =
+			    GetFullyQualifiedTableName(merge.table.catalog, merge.table.ParentSchema(), merge.table.name);
+
+			if (IsExcludedDataset(fully_qualified_name)) {
+				return;
+			}
+
+			// Resolve namespace and data path (uses DATA_PATH for DuckLake)
+			string dataset_ns = ResolveDatasetNamespace(merge.table.catalog);
+			string catalog_path = ResolveCatalogDataPath(merge.table.catalog);
+
+			// Extract catalog information for the catalog facet
+			CatalogInfo catalog_info = ExtractCatalogInfo(merge.table.catalog);
+
+			// Extract schema information
+			json fields = json::array();
+			for (auto &col : merge.table.GetColumns().Logical()) {
+				fields.push_back(LineageEventBuilder::CreateSchemaField(col.Name(), col.Type().ToString()));
+			}
+
+			// Add output dataset with both DataSource and Catalog facets
+			builder.AddOutputDatasetWithFacets(dataset_ns, fully_qualified_name, fields, catalog_path, catalog_info);
+
+			// Add DatasetType facet to distinguish this as a TABLE
+			builder.AddOutputDatasetFacet_DatasetType(dataset_ns, fully_qualified_name, "TABLE");
+
+			// A merge inserts, updates and/or deletes rows of the target table: OVERWRITE, like UPDATE and DELETE
+			builder.AddOutputDatasetFacet_LifecycleStateChange(dataset_ns, fully_qualified_name, "OVERWRITE");
+
 			// ===== Handle COPY TO FILE (export to files) =====
 		} else if (op.type == LogicalOperatorType::LOGICAL_COPY_TO_FILE) {
 			auto &copy_to = op.Cast<LogicalCopyToFile>();
@@ -1381,8 +1416,9 @@ static void FindViewReferencesInTableRef(ClientContext &context, TableRef &ref,
 			// Try all catalog/schema combinations
 			bool found = false;
 			for (const auto &catalog_name : catalog_names) {
-				if (found)
+				if (found) {
 					break;
+				}
 
 				// Build schema list for this specific catalog
 				vector<string> schemas_for_this_catalog;
@@ -1504,6 +1540,33 @@ static void FindViewReferences(ClientContext &context, QueryNode &node, unordere
 	}
 	default:
 		break;
+	}
+}
+
+/// @brief Find the result column that holds the number of rows a statement wrote.
+/// @param root Root of the logical plan.
+/// @return The column index, or an invalid index when every result row is one row written (or the statement
+///         does not write anything).
+/// @note Without RETURNING, INSERT, CREATE TABLE AS, UPDATE, DELETE, MERGE and COPY return a single row with
+///       the count. COPY ... (RETURN_STATS) returns one row per written file, with the count in column 1.
+static optional_idx GetRowCountColumn(LogicalOperator &root) {
+	switch (root.type) {
+	case LogicalOperatorType::LOGICAL_INSERT:
+		return root.Cast<LogicalInsert>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_UPDATE:
+		return root.Cast<LogicalUpdate>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_DELETE:
+		return root.Cast<LogicalDelete>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_MERGE_INTO:
+		return root.Cast<LogicalMergeInto>().return_chunk ? optional_idx() : optional_idx(0);
+	case LogicalOperatorType::LOGICAL_CREATE_TABLE:
+		return optional_idx(0);
+	case LogicalOperatorType::LOGICAL_COPY_TO_FILE:
+		return root.Cast<LogicalCopyToFile>().return_type == CopyFunctionReturnType::WRITTEN_FILE_STATISTICS
+		           ? optional_idx(1)
+		           : optional_idx(0);
+	default:
+		return optional_idx();
 	}
 }
 
@@ -1630,8 +1693,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 		bool found_view_def = false;
 		for (const auto &catalog_name : catalog_names) {
-			if (found_view_def)
+			if (found_view_def) {
 				break;
+			}
 
 			// Build schema list for this specific catalog
 			vector<string> schemas_for_this_catalog;
@@ -1750,8 +1814,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 
 		// Try all combinations
 		for (const auto &catalog_name : catalog_names) {
-			if (found_view)
+			if (found_view) {
 				break;
+			}
 
 			// Build schema list for this specific catalog
 			vector<string> schemas_for_this_catalog;
@@ -1971,7 +2036,9 @@ void DuckLineageOptimizer::PreOptimize(OptimizerExtensionInput &input, unique_pt
 	// ===== Inject the lineage sentinel into the plan =====
 	// Wrap the entire plan with a LogicalLineageSentinel operator
 	// This will track execution and emit COMPLETE/FAIL events
-	auto sentinel = make_uniq<LogicalLineageSentinel>(std::move(plan), runId, jobName, query, outputs);
+	auto row_count_column = GetRowCountColumn(*plan);
+	auto sentinel =
+	    make_uniq<LogicalLineageSentinel>(std::move(plan), runId, jobName, query, outputs, row_count_column);
 
 	// Resolve output types (propagate from child)
 	sentinel->ResolveOperatorTypes();

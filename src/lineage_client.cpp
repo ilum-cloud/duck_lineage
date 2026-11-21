@@ -2,12 +2,15 @@
 // DuckDB OpenLineage Extension
 //
 // File: lineage_client.cpp
-// Description: Implementation of the LineageClient HTTP client.
-//              Manages asynchronous sending of OpenLineage events via CURL.
+// Description: Implementation of the LineageClient.
+//              Manages asynchronous delivery of OpenLineage events via CURL or to a local file.
 //===----------------------------------------------------------------------===//
 
 #include "lineage_client.hpp"
 #include "duckdb/common/string_util.hpp"
+#include "duckdb/common/error_data.hpp"
+#include "duckdb/common/file_open_flags.hpp"
+#include "duckdb/common/file_system.hpp"
 #include <curl/curl.h>
 #include <openssl/crypto.h>
 #include <cstdlib>
@@ -200,6 +203,16 @@ void LineageClient::SetProxy(std::string proxy) {
 	proxy_url = std::move(proxy);
 }
 
+void LineageClient::SetTransport(std::string new_transport) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	transport = std::move(new_transport);
+}
+
+void LineageClient::SetFilePath(std::string path) {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	file_path = std::move(path);
+}
+
 //===--------------------------------------------------------------------===//
 // Configuration Getters (Thread-Safe)
 //===--------------------------------------------------------------------===//
@@ -271,6 +284,16 @@ bool LineageClient::GetSslVerify() const {
 std::string LineageClient::GetProxy() const {
 	std::lock_guard<std::mutex> lock(config_mutex);
 	return proxy_url;
+}
+
+std::string LineageClient::GetTransport() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return transport;
+}
+
+std::string LineageClient::GetFilePath() const {
+	std::lock_guard<std::mutex> lock(config_mutex);
+	return file_path;
 }
 
 //===--------------------------------------------------------------------===//
@@ -497,6 +520,53 @@ bool LineageClient::PostToBackend(const std::string &payload) {
 }
 
 //===--------------------------------------------------------------------===//
+// File Transport
+//===--------------------------------------------------------------------===//
+
+bool LineageClient::AppendToFile(const std::vector<std::string> &events) {
+	if (events.empty()) {
+		return true;
+	}
+	std::string path = GetFilePath();
+	if (path.empty()) {
+		if (IsDebug()) {
+			std::cerr << "OpenLineage Debug: duck_lineage_file_path is not configured. " << events.size()
+			          << " event(s) not written." << '\n';
+		}
+		return false;
+	}
+
+	// JSON Lines: the payloads are compact JSON (no raw newlines), one per line. This is the format the
+	// OpenLineage clients' file transport writes in append mode.
+	std::string lines;
+	for (auto &event : events) {
+		lines += event;
+		lines += '\n';
+	}
+
+	try {
+		// Reopened for every batch, so a file moved away by log rotation is recreated. The batch goes out in a
+		// single append-mode write, so processes sharing the file do not interleave partial lines.
+		auto fs = FileSystem::CreateLocal();
+		auto handle = fs->OpenFile(path, FileFlags::FILE_FLAGS_WRITE | FileFlags::FILE_FLAGS_FILE_CREATE |
+		                                     FileFlags::FILE_FLAGS_APPEND);
+		handle->Write(&lines[0], lines.size());
+		handle->Close();
+	} catch (std::exception &ex) {
+		if (IsDebug()) {
+			std::cerr << "OpenLineage Debug: Failed to write " << events.size() << " event(s) to " << path << ": "
+			          << ErrorData(ex).RawMessage() << '\n';
+		}
+		return false;
+	}
+
+	if (IsDebug()) {
+		std::cout << "OpenLineage Debug: Wrote " << events.size() << " event(s) to " << path << '\n';
+	}
+	return true;
+}
+
+//===--------------------------------------------------------------------===//
 // Background Worker Thread
 //===--------------------------------------------------------------------===//
 
@@ -519,7 +589,11 @@ void LineageClient::BackgroundWorker() {
 			}
 		}
 
-		// Send all events outside the lock
+		// Deliver all events outside the lock
+		if (GetTransport() == "file") {
+			AppendToFile(batch);
+			continue;
+		}
 		for (auto &payload : batch) {
 			bool delivered = PostToBackend(payload);
 			if (!delivered && shutdown_requested) {

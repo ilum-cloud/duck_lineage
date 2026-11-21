@@ -24,7 +24,7 @@ This extension currently implements the following OpenLineage capabilities:
 - **Column-level lineage:** Emits the OpenLineage `columnLineage` dataset facet on output datasets, tracking which input columns flow into each output column and whether the transformation is direct or indirect. Supports column refs, expressions, aliases, CAST, star expansion, JOINs, aggregation, UNION/INTERSECT/EXCEPT, window functions, CTAS, INSERT INTO SELECT, file scans (CSV/Parquet), PIVOT, and UNNEST.
 - **Facets:** Job `sql` facet, run `parent` facet (via OPENLINEAGE_PARENT\* env vars), `processing_engine`, `dataSource` and `catalog` facets, lifecycle change facets (CREATE/DROP/ALTER/OVERWRITE/RENAME/TRUNCATE), and basic `outputStatistics` (row count).
 - **DuckLake support:** Works with [DuckLake](https://github.com/duckdb/ducklake) catalogs. For DuckLake with external storage (S3, local path), the dataset namespace is automatically resolved from the DuckLake DATA_PATH.
-- **Asynchronous delivery:** Background HTTP client with configurable OpenLineage URL, API key, retries, queueing and debug logging.
+- **Asynchronous delivery:** Background HTTP client with configurable OpenLineage URL, API key, retries, queueing and debug logging, or a file transport that appends events to a local JSON Lines file.
 
 > Note: This extension works with both direct SQL execution and PreparedStatements (used by embedded drivers like Java JDBC and Python SQLAlchemy). When a query is executed via PreparedStatement, DuckDB does not expose the original SQL string to the optimizer. In this case, the extension still captures full lineage (inputs, outputs, schemas, facets), but view reference detection is unavailable — tables accessed through views will appear as direct inputs rather than being grouped under their view. The SQL job facet is also omitted when the original query string is not available.
 
@@ -85,6 +85,29 @@ SELECT count(*) FROM users;
 ```
 
 Check your OpenLineage backend (e.g., Marquez UI) to see the lineage graph and run details!
+
+### Writing Events to a File
+
+Without a lineage server, events can be appended to a local file instead, one JSON event per line
+(JSON Lines, the format the OpenLineage clients' file transport writes in append mode):
+
+```sql
+SET duck_lineage_transport = 'file';            -- 'http' (default) | 'file'
+SET duck_lineage_file_path = '/var/log/openlineage/events.jsonl';
+```
+
+- The file is created if it does not exist; its directory must exist. The path is checked when it is set,
+  so an unwritable path fails the `SET` statement. Relative paths are resolved against the current directory.
+- `duck_lineage_url` is not used while the transport is `file`.
+- The file is reopened for every batch of events, so it can be rotated (e.g. by logrotate) without restarting.
+  Several processes can append to the same file without interleaving lines (on POSIX systems).
+- Setting the path is subject to DuckDB's `enable_external_access` and `allowed_directories` settings.
+
+The file can be read back with DuckDB itself, or replayed to any OpenLineage backend later:
+
+```sql
+SELECT eventType, job.name, run.runId FROM read_json('/var/log/openlineage/events.jsonl');
+```
 
 ### Parent Run Integration (Airflow/Dagster)
 

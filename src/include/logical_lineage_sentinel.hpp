@@ -11,6 +11,7 @@
 #pragma once
 
 #include "duckdb/planner/operator/logical_extension_operator.hpp"
+#include "duckdb/common/optional_idx.hpp"
 #include <nlohmann/json.hpp>
 
 namespace duckdb {
@@ -39,18 +40,20 @@ public:
 	/// @param job_name Identifier for the job (SHA-256 hash of query).
 	/// @param query The original SQL query text.
 	/// @param outputs JSON array of output datasets from the query.
+	/// @param row_count_column Result column holding the number of rows written (invalid: count the result rows).
 	explicit LogicalLineageSentinel(unique_ptr<LogicalOperator> child, string run_id, string job_name, string query,
-	                                json outputs)
+	                                json outputs, optional_idx row_count_column)
 	    : run_id(std::move(run_id)), job_name(std::move(job_name)), query(std::move(query)),
-	      outputs(std::move(outputs)) {
+	      outputs(std::move(outputs)), row_count_column(row_count_column) {
 		children.push_back(std::move(child));
 	}
 
 	// ===== Lineage Metadata =====
-	string run_id;   ///< Unique ID for this query run (UUID format)
-	string job_name; ///< Job identifier (SHA-256 of query)
-	string query;    ///< Original SQL query text
-	json outputs;    ///< JSON array of output datasets
+	string run_id;                 ///< Unique ID for this query run (UUID format)
+	string job_name;               ///< Job identifier (SHA-256 of query)
+	string query;                  ///< Original SQL query text
+	json outputs;                  ///< JSON array of output datasets
+	optional_idx row_count_column; ///< Result column with the number of rows written (invalid: count result rows)
 
 	/// @brief Convert this logical operator to a physical operator.
 	/// @param context The client context.

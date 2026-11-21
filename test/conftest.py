@@ -8,11 +8,15 @@ Run tests:
     uv run pytest
 """
 
+import json
 import os
+import time
+import uuid
 import pytest
 import duckdb
 import requests
 from pathlib import Path
+from types import SimpleNamespace
 
 from event_helpers import TEST_NAMESPACE
 
@@ -176,3 +180,47 @@ def lineage_connection(extension_path, marquez_api_url, clean_marquez_namespace)
     conn.execute("SET duck_lineage_debug = true")
     yield conn
     conn.close()
+
+
+@pytest.fixture
+def file_lineage(extension_path, tmp_path):
+    """
+    Connection whose lineage events are written to a file (file transport), so no Marquez is needed.
+
+    Yields a namespace with ``conn``, ``dir`` (a temporary directory) and ``event(sql, event_type)``, which waits
+    for and returns the event of that type for the statement with that SQL text.
+    """
+    path = tmp_path / "events.jsonl"
+    namespace = f"file_lineage_{uuid.uuid4().hex[:8]}"
+    conn = duckdb.connect(":memory:", config={"allow_unsigned_extensions": "true"})
+    conn.execute(f"LOAD '{extension_path}'")
+    # Events left in the process-wide queue by earlier tests are delivered before ours. Without a URL, the ones
+    # still bound for an HTTP backend are dropped right away instead of holding ours up.
+    conn.execute("SET duck_lineage_url = ''")
+    conn.execute("SET duck_lineage_transport = 'file'")
+    conn.execute(f"SET duck_lineage_file_path = '{path}'")
+    conn.execute(f"SET duck_lineage_namespace = '{namespace}'")
+
+    def event(sql, event_type="COMPLETE", timeout=60.0):
+        deadline = time.time() + timeout
+        while True:
+            for line in path.read_text().splitlines():
+                candidate = json.loads(line)
+                if (
+                    candidate["eventType"] == event_type
+                    and candidate["job"]["namespace"] == namespace
+                    and candidate["job"].get("facets", {}).get("sql", {}).get("query") == sql
+                ):
+                    return candidate
+            if time.time() > deadline:
+                pytest.fail(f"No {event_type} event for {sql!r}")
+            time.sleep(0.1)
+
+    try:
+        yield SimpleNamespace(conn=conn, dir=tmp_path, event=event)
+    finally:
+        # The LineageClient is a process-wide singleton: switch back to the HTTP transport for later tests
+        conn.execute("RESET duck_lineage_transport")
+        conn.execute("RESET duck_lineage_file_path")
+        conn.execute("RESET duck_lineage_namespace")
+        conn.close()

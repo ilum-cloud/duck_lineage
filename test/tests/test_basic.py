@@ -73,7 +73,9 @@ def test_simple_query(sample_table, marquez_client):
     assert result[1][0] == "Carol"
 
     # ── Validate the dataset object in Marquez ──
-    dataset = marquez_client.wait_for_dataset_with_fields("duckdb_test", "memory.main.test_employees")
+    # The dataset has its fields as soon as Marquez has processed the CREATE TABLE, so waiting for the fields
+    # alone races with the INSERT's events: wait for the state the INSERT leaves the dataset in.
+    dataset = marquez_client.wait_for_dataset_lifecycle("duckdb_test", "memory.main.test_employees", "OVERWRITE")
     assert dataset is not None, "test_employees should be registered as a dataset in Marquez"
 
     assert_valid_dataset(dataset, "duckdb_test", "test_employees")

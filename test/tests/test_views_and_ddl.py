@@ -264,6 +264,8 @@ def test_update_has_output_statistics(lineage_connection, marquez_client, clean_
             output_facets = output.get("outputFacets") or {}
             if output_facets.get("outputStatistics"):
                 assert_output_has_statistics(output)
+                # The rows updated, not the single count row the UPDATE returns
+                assert output_facets["outputStatistics"]["rowCount"] == 3
                 return
 
     pytest.fail("No outputStatistics.rowCount found on UPDATE COMPLETE event")

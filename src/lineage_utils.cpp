@@ -169,12 +169,13 @@ std::string InferStatementType(const PlanAnalysis &analysis) {
 
 	// Prioritize the most significant features
 	if (has_union || has_except || has_intersect) {
-		if (has_union)
+		if (has_union) {
 			query_type = "SELECT_UNION";
-		else if (has_except)
+		} else if (has_except) {
 			query_type = "SELECT_EXCEPT";
-		else
+		} else {
 			query_type = "SELECT_INTERSECT";
+		}
 	} else if (has_cte) {
 		query_type = "SELECT_CTE";
 	} else if (has_aggregate && has_join) {
