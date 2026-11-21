@@ -6,7 +6,6 @@ OpenLineage backend. None of these tests need Marquez.
 """
 
 import json
-import os
 import subprocess
 import sys
 import textwrap
