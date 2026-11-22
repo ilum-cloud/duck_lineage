@@ -4,6 +4,12 @@ PROJ_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 EXT_NAME=duck_lineage
 EXT_CONFIG=${PROJ_DIR}extension_config.cmake
 
+# Since DuckDB 2.0 the version is no longer derived from `git describe`. Without an explicit version, a build is a
+# development build named after the commit, and the extension refuses to load into a released DuckDB ("built
+# specifically for DuckDB version '<commit>'"). Use the tag the duckdb submodule is checked out at, if any.
+# CI sets the version itself.
+OVERRIDE_GIT_DESCRIBE ?= $(shell git -C $(PROJ_DIR)duckdb describe --tags --exact-match 2>/dev/null)
+
 # Include the Makefile from extension-ci-tools
 include extension-ci-tools/makefiles/duckdb_extension.Makefile
 

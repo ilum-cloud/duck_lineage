@@ -15,6 +15,8 @@ import uuid
 import duckdb
 import pytest
 
+from event_helpers import complete_lines
+
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
 # ---------------------------------------------------------------------------
@@ -39,8 +41,7 @@ def _read_events(path, namespace, count, timeout=60.0):
     """
     deadline = time.time() + timeout
     while True:
-        lines = path.read_text().splitlines() if path.exists() else []
-        events = [e for e in map(json.loads, lines) if e["job"]["namespace"] == namespace]
+        events = [e for e in map(json.loads, complete_lines(path)) if e["job"]["namespace"] == namespace]
         if len(events) >= count or time.time() > deadline:
             return events
         time.sleep(0.1)
@@ -232,7 +233,8 @@ def test_http_transport_does_not_write_to_file(file_conn):
 # ---------------------------------------------------------------------------
 # These run in subprocesses: they check what is in the file once the interpreter has exited.
 
-_WRITER_SCRIPT = textwrap.dedent("""
+_WRITER_SCRIPT = textwrap.dedent(
+    """
     import sys
     import duckdb
 
@@ -245,7 +247,8 @@ _WRITER_SCRIPT = textwrap.dedent("""
     for i in range(statements - 1):
         conn.execute(f"CREATE TABLE out_{i} AS SELECT a * {i} AS b FROM src")
     # Exit right away, while the worker thread still has events queued.
-    """)
+    """
+)
 
 
 def _start_writer(extension_path, path, statements):

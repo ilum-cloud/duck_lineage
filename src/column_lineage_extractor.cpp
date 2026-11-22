@@ -28,6 +28,7 @@
 #include "duckdb/planner/expression/bound_function_expression.hpp"
 #include "duckdb/planner/expression/bound_aggregate_expression.hpp"
 #include "duckdb/planner/expression/bound_cast_expression.hpp"
+#include "duckdb/planner/expression/bound_comparison_expression.hpp"
 #include "duckdb/planner/expression/bound_operator_expression.hpp"
 #include "duckdb/planner/expression/bound_case_expression.hpp"
 #include "duckdb/planner/expression/bound_window_expression.hpp"
@@ -114,7 +115,7 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 	case LogicalOperatorType::LOGICAL_PROJECTION: {
 		auto &proj = op.Cast<LogicalProjection>();
 		for (auto &expr : proj.expressions) {
-			names.push_back(expr->GetName());
+			names.push_back(expr->GetName().GetIdentifierName());
 		}
 		break;
 	}
@@ -128,7 +129,7 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 			}
 			auto col_idx = column_ids[i].GetPrimaryIndex();
 			if (col_idx < get.names.size()) {
-				names.push_back(get.names[col_idx]);
+				names.push_back(get.names[col_idx].GetIdentifierName());
 			} else {
 				names.push_back("col" + to_string(i));
 			}
@@ -138,10 +139,10 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 	case LogicalOperatorType::LOGICAL_AGGREGATE_AND_GROUP_BY: {
 		auto &agg = op.Cast<LogicalAggregate>();
 		for (auto &group : agg.groups) {
-			names.push_back(group->GetName());
+			names.push_back(group->GetName().GetIdentifierName());
 		}
 		for (auto &expr : agg.expressions) {
-			names.push_back(expr->GetName());
+			names.push_back(expr->GetName().GetIdentifierName());
 		}
 		break;
 	}
@@ -157,7 +158,7 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 		// Pivoted columns: value_aggname pattern
 		for (auto &val : pivot.bound_pivot.pivot_values) {
 			for (auto &agg : pivot.bound_pivot.aggregates) {
-				names.push_back(val + "_" + agg->GetName());
+				names.push_back(val + "_" + agg->GetName().GetIdentifierName());
 			}
 		}
 		// Pad if needed
@@ -171,7 +172,7 @@ static vector<string> GetOperatorColumnNames(LogicalOperator &op) {
 			names = GetOperatorColumnNames(*op.children[0]);
 		}
 		for (auto &expr : op.expressions) {
-			names.push_back(expr->GetName());
+			names.push_back(expr->GetName().GetIdentifierName());
 		}
 		break;
 	}
@@ -388,7 +389,7 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 			dataset_name = GetFullyQualifiedTableName(get.GetTable()->catalog, get.GetTable()->ParentSchema(),
 			                                          get.GetTable()->name);
 		} catch (...) {
-			dataset_name = get.GetTable()->name;
+			dataset_name = get.GetTable()->name.GetIdentifierName();
 		}
 
 		// Get the table columns for name lookup
@@ -396,10 +397,10 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 		try {
 			auto &table_columns = get.GetTable()->GetColumns();
 			for (auto &col : table_columns.Logical()) {
-				column_names.push_back(col.Name());
+				column_names.push_back(col.Name().GetIdentifierName());
 			}
 		} catch (...) {
-			column_names = get.names;
+			column_names = IdentifiersToStrings(get.names);
 		}
 	} else {
 		// File scan (read_csv, read_parquet, etc.) or table function.
@@ -425,7 +426,7 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 		if (raw_path.empty()) {
 			// Table function with no resolvable path; preserve prior fallback.
 			dataset_ns = "file";
-			dataset_name = get.function.name;
+			dataset_name = get.function.GetName().GetIdentifierName();
 		} else {
 			// Split URI-style paths so columnLineage.inputFields[] uses the
 			// same (namespace, name) key as the top-level inputs[] entry.
@@ -435,7 +436,7 @@ void ColumnLineageExtractor::HandleGet(LogicalOperator &op) {
 		}
 
 		// Use get.names for column name lookup
-		column_names = get.names;
+		column_names = IdentifiersToStrings(get.names);
 	}
 
 	// Map each column binding to its source
@@ -531,8 +532,8 @@ void ColumnLineageExtractor::HandleJoin(LogicalOperator &op) {
 	auto right_bindings = op.children[1]->GetColumnBindings();
 
 	// Check for projection maps on join operators
-	vector<idx_t> left_projection_map;
-	vector<idx_t> right_projection_map;
+	vector<ProjectionIndex> left_projection_map;
+	vector<ProjectionIndex> right_projection_map;
 
 	if (op.type == LogicalOperatorType::LOGICAL_COMPARISON_JOIN || op.type == LogicalOperatorType::LOGICAL_DELIM_JOIN ||
 	    op.type == LogicalOperatorType::LOGICAL_ASOF_JOIN || op.type == LogicalOperatorType::LOGICAL_ANY_JOIN) {
@@ -778,10 +779,10 @@ void ColumnLineageExtractor::HandleDefaultPassthrough(LogicalOperator &op) {
 BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	BindingLineage result;
 
-	switch (expr.expression_class) {
+	switch (expr.GetExpressionClass()) {
 	case ExpressionClass::BOUND_COLUMN_REF: {
 		auto &col_ref = expr.Cast<BoundColumnRefExpression>();
-		auto key = col_ref.binding;
+		auto key = col_ref.Binding();
 		auto it = lineage_map.find(key);
 		if (it != lineage_map.end()) {
 			result = it->second;
@@ -789,10 +790,27 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 		break;
 	}
 	case ExpressionClass::BOUND_FUNCTION: {
+		auto &func = expr.Cast<BoundFunctionExpression>();
+		// Since DuckDB 2.0 a CAST is a function too. It passes the value through, so it keeps the child's
+		// DIRECT/INDIRECT status.
+		if (BoundCastExpression::IsCast(expr)) {
+			result = ResolveExpression(*BoundCastExpression::ChildMutable(func));
+			break;
+		}
+		// Comparisons and BETWEEN became functions in DuckDB 2.0 as well. They used to be expression classes of
+		// their own, whose children were merged without making the result INDIRECT: keep it that way, so that
+		// e.g. CASE WHEN value > 100 THEN name END stays DIRECT.
+		if (BoundComparisonExpression::IsComparison(expr) ||
+		    expr.GetExpressionType() == ExpressionType::COMPARE_BETWEEN ||
+		    expr.GetExpressionType() == ExpressionType::COMPARE_NOT_BETWEEN) {
+			for (auto &child : func.GetChildrenMutable()) {
+				result.Merge(ResolveExpression(*child));
+			}
+			break;
+		}
 		// Scalar functions (UPPER, LOWER, CONCAT, etc.) are INDIRECT: they transform
 		// column values rather than passing them through unchanged.
-		auto &func = expr.Cast<BoundFunctionExpression>();
-		for (auto &child : func.children) {
+		for (auto &child : func.GetChildrenMutable()) {
 			result.Merge(ResolveExpression(*child));
 		}
 		result.is_direct = false;
@@ -800,32 +818,27 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	}
 	case ExpressionClass::BOUND_AGGREGATE: {
 		auto &agg = expr.Cast<BoundAggregateExpression>();
-		for (auto &child : agg.children) {
+		for (auto &child : agg.GetChildrenMutable()) {
 			result.Merge(ResolveExpression(*child));
 		}
 		result.is_direct = false; // aggregation fundamentally transforms data
 		break;
 	}
-	case ExpressionClass::BOUND_CAST: {
-		auto &cast = expr.Cast<BoundCastExpression>();
-		result = ResolveExpression(*cast.child);
-		break;
-	}
 	case ExpressionClass::BOUND_OPERATOR: {
 		auto &oper = expr.Cast<BoundOperatorExpression>();
-		for (auto &child : oper.children) {
+		for (auto &child : oper.GetChildrenMutable()) {
 			result.Merge(ResolveExpression(*child));
 		}
 		break;
 	}
 	case ExpressionClass::BOUND_CASE: {
 		auto &case_expr = expr.Cast<BoundCaseExpression>();
-		for (auto &check : case_expr.case_checks) {
+		for (auto &check : case_expr.CaseChecksMutable()) {
 			result.Merge(ResolveExpression(*check.when_expr));
 			result.Merge(ResolveExpression(*check.then_expr));
 		}
-		if (case_expr.else_expr) {
-			result.Merge(ResolveExpression(*case_expr.else_expr));
+		if (case_expr.ElseMutable()) {
+			result.Merge(ResolveExpression(*case_expr.ElseMutable()));
 		}
 		break;
 	}
@@ -833,13 +846,13 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 		// Window functions are INDIRECT: they compute values across row sets (even
 		// ROW_NUMBER() produces synthetic ordinals, not the column values themselves).
 		auto &window_expr = expr.Cast<BoundWindowExpression>();
-		for (auto &child : window_expr.children) {
+		for (auto &child : window_expr.GetChildrenMutable()) {
 			result.Merge(ResolveExpression(*child));
 		}
-		for (auto &partition : window_expr.partitions) {
+		for (auto &partition : window_expr.PartitionsMutable()) {
 			result.Merge(ResolveExpression(*partition));
 		}
-		for (auto &order : window_expr.orders) {
+		for (auto &order : window_expr.OrderByMutable()) {
 			result.Merge(ResolveExpression(*order.expression));
 		}
 		result.is_direct = false;
@@ -847,7 +860,7 @@ BindingLineage ColumnLineageExtractor::ResolveExpression(Expression &expr) {
 	}
 	case ExpressionClass::BOUND_UNNEST: {
 		auto &unnest_expr = expr.Cast<BoundUnnestExpression>();
-		result = ResolveExpression(*unnest_expr.child);
+		result = ResolveExpression(*unnest_expr.ChildMutable());
 		result.is_direct = false;
 		break;
 	}

@@ -18,13 +18,13 @@
 
 namespace duckdb {
 
-std::string GetFullyQualifiedTableName(Catalog &catalog, SchemaCatalogEntry &schema, const std::string &table_name) {
+std::string GetFullyQualifiedTableName(Catalog &catalog, SchemaCatalogEntry &schema, const Identifier &table_name) {
 	// Build fully qualified name: catalog.schema.table
-	const std::string &catalog_name = catalog.GetName();
-	const std::string &schema_name = schema.name;
+	const std::string &catalog_name = catalog.GetName().GetIdentifierName();
+	const std::string &schema_name = schema.name.GetIdentifierName();
 
 	// Format as catalog.schema.table
-	return catalog_name + "." + schema_name + "." + table_name;
+	return catalog_name + "." + schema_name + "." + table_name.GetIdentifierName();
 }
 
 std::string SanitizeJobNamePart(const std::string &str) {
@@ -70,22 +70,22 @@ static void AnalyzePlanRecursive(const LogicalOperator &plan, PlanAnalysis &resu
 		if (plan.type == LogicalOperatorType::LOGICAL_GET) {
 			auto &get = plan.Cast<LogicalGet>();
 			if (get.GetTable()) {
-				result.table_names.push_back(get.GetTable()->name);
+				result.table_names.push_back(get.GetTable()->name.GetIdentifierName());
 			}
 		} else if (plan.type == LogicalOperatorType::LOGICAL_INSERT) {
 			auto &insert = plan.Cast<LogicalInsert>();
-			result.table_names.push_back(insert.table.name);
+			result.table_names.push_back(insert.table.name.GetIdentifierName());
 		} else if (plan.type == LogicalOperatorType::LOGICAL_CREATE_TABLE) {
 			auto &create = plan.Cast<LogicalCreateTable>();
 			if (create.info) {
-				result.table_names.push_back(create.info->Base().table);
+				result.table_names.push_back(create.info->Base().GetTableName().GetIdentifierName());
 			}
 		} else if (plan.type == LogicalOperatorType::LOGICAL_DELETE) {
 			auto &del = plan.Cast<LogicalDelete>();
-			result.table_names.push_back(del.table.name);
+			result.table_names.push_back(del.table.name.GetIdentifierName());
 		} else if (plan.type == LogicalOperatorType::LOGICAL_UPDATE) {
 			auto &update = plan.Cast<LogicalUpdate>();
-			result.table_names.push_back(update.table.name);
+			result.table_names.push_back(update.table.name.GetIdentifierName());
 		}
 	}
 
@@ -359,7 +359,7 @@ CatalogInfo ExtractCatalogInfo(Catalog &catalog) {
 	CatalogInfo info;
 	info.framework = "duckdb";
 	info.source = "duckdb";
-	info.name = catalog.GetName();
+	info.name = catalog.GetName().GetIdentifierName();
 
 	// Handle system and temporary catalogs first
 	if (catalog.IsSystemCatalog()) {

@@ -11,6 +11,7 @@
 
 #include "duckdb/common/types/timestamp.hpp"
 #include "duckdb/planner/logical_operator.hpp"
+#include "duckdb/common/identifier.hpp"
 #include <openssl/evp.h>
 #include <string>
 #include <string_view>
@@ -25,6 +26,9 @@
 #include <unordered_set>
 
 namespace duckdb {
+
+class Catalog;
+class SchemaCatalogEntry;
 
 class Catalog;
 
@@ -224,7 +228,7 @@ static string extract_base_path(const string &location, const string &schema_nam
 /// @param table_name The name of the table.
 /// @return Fully qualified name in the format: catalog.schema.table
 /// @note Used to generate fully qualified dataset names for OpenLineage events.
-std::string GetFullyQualifiedTableName(Catalog &catalog, SchemaCatalogEntry &schema, const std::string &table_name);
+std::string GetFullyQualifiedTableName(Catalog &catalog, SchemaCatalogEntry &schema, const Identifier &table_name);
 
 /// @brief Sanitize a string for use in a job name by replacing invalid characters.
 /// @param str Input string to sanitize.

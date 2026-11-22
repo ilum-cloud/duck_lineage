@@ -55,6 +55,9 @@ INSTALL duck_lineage FROM community;
 LOAD duck_lineage;
 ```
 
+`INSTALL` picks the build that matches your DuckDB version. `main` targets DuckDB 2.0; DuckDB 1.5 is maintained on
+the `v1.5-variegata` branch (v0.3.x) and DuckDB 1.4 on `v1.4-andium`.
+
 Next, configure the OpenLineage backend URL (e.g., Marquez):
 
 ```sql
